@@ -12,6 +12,10 @@
          (map byte)
          byte-array)))
 
+; same
+(defn hexify [bytes]
+  (format "%x" (new BigInteger bytes)))
+
 ; "Cryptopals Rule:
 ; Always operate on raw bytes, never on encoded strings. Only use hex and base64 for pretty-printing."
 
@@ -21,12 +25,15 @@
        unhexify
        (.encodeToString (Base64/getEncoder))))
 
+(defn fixed-xor
+  [byte-array-1 byte-array-2]
+  (byte-array (map bit-xor byte-array-1 byte-array-2)))
+
 
 (comment
-  (let [foo "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d"]
-    (=
-      (hex->base64 foo)
-      "SSdtIGtpbGxpbmcgeW91ciBicmFpbiBsaWtlIGEgcG9pc29ub3VzIG11c2hyb29t")
+  (let [foo (unhexify "1c0111001f010100061a024b53535009181c")
+        bar (unhexify "686974207468652062756c6c277320657965")]
+    (hexify (fixed-xor foo bar))
 
     )
 
