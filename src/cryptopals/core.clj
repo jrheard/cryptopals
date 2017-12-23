@@ -25,15 +25,27 @@
        unhexify
        (.encodeToString (Base64/getEncoder))))
 
+(defn bytes->str
+  [bytes]
+  (apply str (map char bytes)))
+
 (defn fixed-xor
   [byte-array-1 byte-array-2]
   (byte-array (map bit-xor byte-array-1 byte-array-2)))
 
 
 (comment
-  (let [foo (unhexify "1c0111001f010100061a024b53535009181c")
-        bar (unhexify "686974207468652062756c6c277320657965")]
-    (hexify (fixed-xor foo bar))
+
+  (let [foo (unhexify "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")]
+    (for [character (map byte "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")]
+      (let [character-buffer (byte-array (repeat (count foo) character))]
+        (bytes->str
+          (fixed-xor foo character-buffer)
+          )
+        )
+
+
+      )
 
     )
 
