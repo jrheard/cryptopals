@@ -11,15 +11,6 @@
                             (unhexify "686974207468652062756c6c277320657965")))
          "746865206b696420646f6e277420706c6179")))
 
-
 (deftest set-1-challenge-3
-  (let [input (unhexify "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")]
-    (is (= (second (first (sort-by
-                            #(nth % 2)
-                            (for [character (map byte "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")]
-                              (let [character-buffer (byte-array (repeat (count input) character))
-                                    decoded (bytes->str (fixed-xor input character-buffer))]
-                                [(char character)
-                                 decoded
-                                 (score-string decoded)])))))
-           "Cooking MC's like a pound of bacon"))))
+  (is (= (detect-single-character-xor (unhexify "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"))
+         "Cooking MC's like a pound of bacon")))

@@ -1,5 +1,6 @@
 (ns cryptopals.core
-  (:require [clojure.string :refer [trim lower-case]]
+  (:require [clojure.string :refer [trim lower-case split]]
+            [clojure.java.io :as io]
             [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS]])
   (:import java.util.Base64))
 
@@ -27,8 +28,7 @@
        unhexify
        (.encodeToString (Base64/getEncoder))))
 
-(defn bytes->str
-  [bytes]
+(defn bytes->str [bytes]
   (apply str (map char bytes)))
 
 (defn fixed-xor
@@ -83,12 +83,45 @@
                                 (not (Character/isLetterOrDigit %))
                                 (not (re-seq okay-symbols (str %))))
                              s)]
-    (+ (chi-squared-score expected observed)
-       (* (count unrecognized)
-          (/ (count unrecognized)
-             (count s))
-          10))))
+    (/ (+ (chi-squared-score expected observed)
+          ; xxxxx is this right? i think i should get rid of the first item of this *
+          (* (count unrecognized)
+             (/ (count unrecognized)
+                (count s))
+             10))
+       (count s))))
+
+(defn attempt-to-decode-single-xored-bytes
+  [byte-arr character]
+  (let [character-buffer (byte-array (repeat (count byte-arr) character))
+        xored-bytes (fixed-xor byte-arr character-buffer)]
+    (when (every? nat-int? xored-bytes)
+      [(char character)
+       (bytes->str xored-bytes)
+       (score-string (bytes->str xored-bytes))])))
+
+(defn detect-single-character-xor
+  [byte-arr]
+  (let [decode-attempts (->> "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                             (map byte)
+                             (map #(attempt-to-decode-single-xored-bytes byte-arr %)))
+        valid-attempts (filter identity decode-attempts)]
+
+    (second (first (sort-by
+                     #(nth % 2)
+                     valid-attempts))))
+  ; TODO - return nil if none detected!!!!! filter for only scores < 1
+  )
 
 
 (comment
+  (detect-single-character-xor (unhexify "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"))
+
+  (unhexify (first (split (slurp (io/resource "set_1_challenge_4.txt")) #"\n")))
+
+  (let [inputs (split (slurp (io/resource "set_1_challenge_4.txt")) #"\n")]
+    (filter identity (map #(detect-single-character-xor (unhexify %))
+                          inputs)))
+
+
   )
