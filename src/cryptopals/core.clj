@@ -65,8 +65,6 @@
 
 (defn chi-squared-score
   [expected observed]
-  ; TODO - ignore things that don't appear in expected?
-
   (apply +
          (for [[character expected-occurrences] expected]
            (do
@@ -80,42 +78,17 @@
   [s]
   (let [expected (transform [MAP-VALS] #(* % (count s)) ENGLISH-CHARACTER-FREQUENCIES)
         observed (transform [MAP-KEYS] #(first (seq (lower-case %))) (frequencies s))
-        okay-symbols #"[! .,;'\"\(\)]"]
+        okay-symbols #"[! .,;'\"\(\)]"
+        unrecognized (filter #(and
+                                (not (Character/isLetterOrDigit %))
+                                (not (re-seq okay-symbols (str %))))
+                             s)]
     (+ (chi-squared-score expected observed)
-       (* (count (filter #(and
-                            (not (Character/isLetterOrDigit %))
-                            (not (re-seq okay-symbols (str %))))
-                         s))
-          5))))
+       (* (count unrecognized)
+          (/ (count unrecognized)
+             (count s))
+          10))))
+
 
 (comment
-  (score-string "JOIFWEJOIFEW")
-
-  (frequencies "JIOFEWJIOFEW")
-
-  (seq "j")
-
-  (re-seq #"!" "f")
-
-
-  (score-string "Uyy}xq6[U1e6z}s6w6fycxr6yp6twuyx")
-
-  (sort-by
-    #(nth % 2)
-    (let [foo (unhexify "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736")]
-      (for [character (map byte "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")]
-        (let [character-buffer (byte-array (repeat (count foo) character))
-              decoded (bytes->str (fixed-xor foo character-buffer))]
-          [(char character)
-           decoded
-           (score-string decoded)]))))
-
-  (Integer/toString (int \X) 2)
-  (int \X)
-
-  (let [foo "Cooking MC's like a pound of bacon"
-        bar (frequencies foo)]
-    (filter #(Character/isLowerCase %) foo)
-    )
-
   )
