@@ -38,10 +38,33 @@
 (defn score-string
   "Returns a number between 0.0 and 1.0, indicating how likely it is that `s` is some English text."
   [s]
-  (let [letters (select [ALL #(Character/isLetter %)] s)]
-    (/ (count letters) (count s))
-    )
-  )
+  (let [letters (filter #(Character/isLetter %) s)
+        lowercase-letters (filter #(Character/isLowerCase %) s)
+        digits (filter #(Character/isDigit %) s)
+        normal-sentence-symbols-re #"[!@., ;:\(\)'\"]"
+        normal-sentence-symbols (re-seq normal-sentence-symbols-re s)
+
+        everything-else (filter #(not
+                                   (or
+                                     (Character/isLetter %)
+                                     (Character/isDigit %)
+                                     (re-seq normal-sentence-symbols-re (str %))))
+                                s)
+
+        scores [(- 0.8
+                   (/ (count letters) (count s)))
+                (- 0.9
+                   (/ (count lowercase-letters) (count letters)))
+                (- 0.2
+                   (/ (+ (count digits) (count normal-sentence-symbols))
+                      (count s)))
+                (/ (count everything-else) (count s))]]
+
+    (- 1
+       (/ (apply +
+                 (for [score scores]
+                   (min (Math/abs (float score)) 1)))
+          (count scores)))))
 
 (comment
 
@@ -58,7 +81,7 @@
 
   (let [foo "Cooking MC's like a pound of bacon"
         bar (frequencies foo)]
-    (score-string foo)
+    (filter #(Character/isLowerCase %) foo)
     )
 
   )
