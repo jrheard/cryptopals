@@ -1,5 +1,7 @@
 (ns cryptopals.core-test
-  (:require [clojure.test :refer :all]
+  (:require [clojure.java.io :as io]
+            [clojure.string :refer [split]]
+            [clojure.test :refer :all]
             [cryptopals.core :refer :all]))
 
 (deftest set-1-challenge-1
@@ -14,3 +16,9 @@
 (deftest set-1-challenge-3
   (is (= (detect-single-character-xor (unhexify "1b37373331363f78151b7f2b783431333d78397828372d363c78373e783a393b3736"))
          "Cooking MC's like a pound of bacon")))
+
+(deftest set-1-challenge-4
+  (is (= (let [inputs (split (slurp (io/resource "set_1_challenge_4.txt")) #"\n")]
+           (first (filter identity (map #(detect-single-character-xor (unhexify %))
+                                        inputs))))
+         "Now that the party is jumping\n")))
