@@ -106,7 +106,7 @@
 
 (defn detect-single-character-xor
   [byte-arr]
-  (let [decode-attempts (->> (range 128)
+  (let [decode-attempts (->> (map int "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
                              (map #(attempt-to-decode-single-xored-bytes byte-arr %)))
         valid-attempts (filter #(< (nth % 2) 1) decode-attempts)]
 
@@ -119,22 +119,29 @@
   (map bit-xor plaintext-bytes (cycle key-bytes)))
 
 
+(defn hamming-distance
+  [a b]
+  (assert (= (count a) (count b)))
+
+  (count (filter #(= % \1)
+                 (mapcat #(Integer/toString % 2)
+                         (map bit-xor a b)))))
+
+
+
 (comment
-  "b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272
-  a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f"
 
+  (let [inputs (split (slurp (io/resource "set_1_challenge_4.txt")) #"\n")]
+    (first (filter identity (map #(detect-single-character-xor (unhexify %))
+                                 inputs))))
 
-  (let [foo "Burning 'em, if you ain't quick and nimble\nI go crazy when I hear a cymbal"]
-    (take 5 (unhexify "0b3637272a2b2e63622c2e69692a23693a2a3c6324202d623d63343c2a26226324272765272a282b2f20430a652e2c652a3124333a653e2b2027630c692b20283165286326302e27282f"))
-    (take 5 (repeating-key-xor-encrypt (.getBytes foo) (.getBytes "ICE")))
-    #_(hexify (repeating-key-xor-encrypt (.getBytes foo)
-                                (.getBytes "ICE"))))
+  (count (slurp (io/resource "set_1_challenge_4.txt")))
 
+  (count (clojure.string/replace (slurp (io/resource "set_1_challenge_4.txt")) #"\n" ""))
 
-  (take 10 (cycle (.getBytes "ICE")))
+  (let [input (slurp (io/resource "set_1_challenge_4.txt"))]
 
-  (score-string "Cooking MC's like a pound of bacon")
-  (score-string "Now that the party is jumping\n")
-  (score-string "|t,W3\"8cOUbdHÉVIv{S0?6ÏeBlp")
+    input
+    )
 
   )
