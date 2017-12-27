@@ -207,21 +207,16 @@
          (map char)
          (apply str))))
 
+(defn pkcs7-pad [bytes block-length]
+  (let [num-bytes-to-pad (- block-length
+                            (rem (count bytes) block-length))]
+    (concat bytes
+            (repeat num-bytes-to-pad num-bytes-to-pad))))
+
 (comment
+  (apply str (map char (pkcs7-pad (.getBytes "YELLOW SUBMARINE") 20)))
 
-  (duplicates [1 5 3 2 1 3 3])
+  (count (.getBytes "YELLOW SUBMARINE"))
 
-  (let [ciphertexts (as-> "set_1_challenge_8.txt" $
-                          (io/resource $)
-                          (slurp $)
-                          (split $ #"\n")
-                          (map #(.decode (Base64/getDecoder) %) $))]
 
-    (for [bytes ciphertexts
-          :let [chunks (partition 16 bytes)
-                dupe-chunks (duplicates chunks)]
-          :when (> (count dupe-chunks) 0)]
-      (.encodeToString (Base64/getEncoder) bytes))
-
-    )
   )
