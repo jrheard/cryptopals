@@ -3,7 +3,9 @@
             [clojure.string :refer [trim lower-case split]]
             [clojure.java.io :as io]
             [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST]])
-  (:import java.util.Base64))
+  (:import java.util.Base64
+           (javax.crypto Cipher)
+           (javax.crypto.spec SecretKeySpec)))
 
 ; from https://stackoverflow.com/questions/10062967/clojures-equivalent-to-pythons-encodehex-and-decodehex
 (defn unhexify [s]
@@ -110,7 +112,7 @@
 
 (defn detect-single-character-xor
   [byte-arr]
-  (let [decode-attempts (->> (range 128)
+  (let [decode-attempts (->> (range 32 123)
                              (map #(attempt-to-decode-single-xored-bytes byte-arr %)))
         valid-attempts (filter #(< (nth % 2) MAGIC-SINGLE-XOR-DETECTION-STRING-SCORE-THRESHOLD)
                                decode-attempts)
@@ -135,6 +137,7 @@
 
 (defn detect-repeating-xor-keysize
   [ciphertext-bytes]
+  ; "Let KEYSIZE be the guessed length of the key; try values from 2 to (say) 40."
   (let [key-sizes-and-distances (for [key-size (range 2 41)]
                                   ; "For each KEYSIZE, take the first KEYSIZE worth of bytes, and
                                   ; the second KEYSIZE worth of bytes, and find the edit distance
@@ -153,32 +156,61 @@
     (ffirst (sort-by second key-sizes-and-distances))))
 
 (defn repeating-key-xor-decrypt
-  [ciphertext-bytes]
-  ; "The KEYSIZE with the smallest normalized edit distance is probably the key."
-  (let [key-size (detect-repeating-xor-keysize ciphertext-bytes)
+  ([ciphertext-bytes]
+    ; "The KEYSIZE with the smallest normalized edit distance is probably the key."
+   (repeating-key-xor-decrypt ciphertext-bytes (detect-repeating-xor-keysize ciphertext-bytes)))
 
-        ; "Now that you probably know the KEYSIZE: break the ciphertext into blocks of KEYSIZE length."
-        chunked-ciphertext (map (partial apply vector)
-                                (partition key-size ciphertext-bytes))
+  ([ciphertext-bytes key-size]
+    ; "Now that you probably know the KEYSIZE: break the ciphertext into blocks of KEYSIZE length."
+   (let [chunked-ciphertext (map (partial apply vector)
+                                 (partition key-size ciphertext-bytes))
 
-        ; "Now transpose the blocks: make a block that is the first byte of every block,
-        ; and a block that is the second byte of every block, and so on."
-        transposed-blocks (for [i (range key-size)]
-                            (select [ALL i] chunked-ciphertext))
+         ; "Now transpose the blocks: make a block that is the first byte of every block,
+         ; and a block that is the second byte of every block, and so on."
+         transposed-blocks (for [i (range key-size)]
+                             (select [ALL i] chunked-ciphertext))
 
-        ; "Solve each block as if it was single-character XOR. You already have code to do this."
-        decodings (map detect-single-character-xor transposed-blocks)
+         ; "Solve each block as if it was single-character XOR. You already have code to do this."
+         decodings (map detect-single-character-xor transposed-blocks)
 
-        key (map first decodings)]
+         key (map first decodings)]
 
-    ; "For each block, the single-byte XOR key that produces the best looking histogram
-    ; is the repeating-key XOR key byte for that block. Put them together and you have the key."
-    [key
-     (map bit-xor
-          ciphertext-bytes
-          (take (count ciphertext-bytes)
-                (cycle (map int key))))]))
+     ; "For each block, the single-byte XOR key that produces the best looking histogram
+     ; is the repeating-key XOR key byte for that block. Put them together and you have the key."
+     [key
+      (map bit-xor
+           ciphertext-bytes
+           (take (count ciphertext-bytes)
+                 (cycle (map int key))))])))
+
+(defn parse-base64-file
+  [filename]
+  (as-> filename $
+        (io/resource $)
+        (slurp $)
+        (clojure.string/replace $ #"\n" "")
+        (.decode (Base64/getDecoder) $)))
+
+(defn aes-128-ecb-decrypt [ciphertext-bytes key-string]
+  (let [key (SecretKeySpec. (.getBytes key-string) "AES")
+        cipher (Cipher/getInstance "AES/ECB/NoPadding")]
+
+    (.init cipher (Cipher/DECRYPT_MODE) key)
+    (->> ciphertext-bytes
+         byte-array
+         (.doFinal cipher)
+         (map char)
+         (apply str))))
 
 (comment
+
+  (subs "ajfioweeifjoawjfeaw" 0 5)
+
+
+  (let [input (parse-base64-file "set_1_challenge_7.txt")]
+    (subs (aes-128-ecb-decrypt input "YELLOW SUBMARINE") 0 33)
+
+
+    )
 
   )
