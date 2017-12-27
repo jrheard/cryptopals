@@ -233,34 +233,33 @@
 
 (defn cbc-mode-decrypt
   [ciphertext-bytes key-bytes iv-bytes]
-  ; TODO strip off padding
-  (let [partitioned (partition 16 ciphertext-bytes)]
-    (apply concat
-           (reduce (fn [plaintext-bytes [block xor-block]]
-
-                     (conj plaintext-bytes
-                           ; Per https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_Block_Chaining_(CBC) :
-                           ; If you're decrypting, decrypt the block and _then_ xor it.
-                           (fixed-xor
-                             (aes-128-ecb-decrypt block key-bytes)
-                             xor-block)))
-                   []
-                   (map vector
-                        partitioned
-                        (concat [iv-bytes]
-                                (drop-last 1 partitioned)))))))
+  (let [partitioned (partition 16 ciphertext-bytes)
+        xor-blocks (concat [iv-bytes] (drop-last 1 partitioned))
+        decryption (apply concat
+                          (reduce (fn [plaintext-bytes [block xor-block]]
+                                    (conj plaintext-bytes
+                                          ; Per https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_Block_Chaining_(CBC) :
+                                          ; If you're decrypting, decrypt the block and _then_ xor it.
+                                          (fixed-xor (aes-128-ecb-decrypt block key-bytes)
+                                                     xor-block)))
+                                  []
+                                  (map vector partitioned xor-blocks)))
+        padding-byte (last decryption)]
+    (drop-last padding-byte decryption)))
 
 
 (comment
 
-  (map vector [1 2 3] [:a :b :c])
+  (let [input (parse-base64-file "set_2_challenge_10.txt")]
+    (bytes->str (cbc-mode-decrypt input (.getBytes "YELLOW SUBMARINE") (byte-array (repeat 16 0)))))
+
 
 
 
   (let [key (.getBytes "YELLOW SUBMARINE")
         iv (byte-array (repeat 16 0))
         ciphertext (cbc-mode-encrypt
-                     (map int "Hello World Hello World")
+                     (map int "Hello World Hello World AAAAFJIEOJFOEWFI")
                      key
                      iv)
         decryption (cbc-mode-decrypt ciphertext key iv)]
