@@ -2,7 +2,8 @@
   (:require [clojure.java.io :as io]
             [clojure.string :refer [split]]
             [clojure.test :refer :all]
-            [cryptopals.core :refer :all]))
+            [cryptopals.core :refer :all])
+  (:import java.util.Base64))
 
 (deftest set-1-challenge-1
   (is (= (hex->base64 "49276d206b696c6c696e6720796f757220627261696e206c696b65206120706f69736f6e6f7573206d757368726f6f6d")
@@ -43,3 +44,19 @@
   (let [input (parse-base64-file "set_1_challenge_7.txt")]
     (is (= (subs (aes-128-ecb-decrypt input "YELLOW SUBMARINE") 0 33)
            "I'm back and I'm ringin' the bell"))))
+
+(deftest set-1-challenge-8
+  (let [ciphertexts (as-> "set_1_challenge_8.txt" $
+                          (io/resource $)
+                          (slurp $)
+                          (split $ #"\n")
+                          (map #(.decode (Base64/getDecoder) %) $))
+
+        ciphertexts-with-dupes (for [bytes ciphertexts
+                                     :let [chunks (partition 16 bytes)
+                                           dupe-chunks (duplicates chunks)]
+                                     :when (> (count dupe-chunks) 0)]
+                                 (.encodeToString (Base64/getEncoder) bytes))]
+
+    (is (= ciphertexts-with-dupes
+           ["d880619740a8a19b7840a8a31c810a3d08649af70dc06f4fd5d2d69c744cd283e2dd052f6b641dbf9d11b0348542bb5708649af70dc06f4fd5d2d69c744cd2839475c9dfdbc1d46597949d9c7e82bf5a08649af70dc06f4fd5d2d69c744cd28397a93eab8d6aecd566489154789a6b0308649af70dc06f4fd5d2d69c744cd283d403180c98c8f6db1f2a3f9c4040deb0ab51b29933f2c123c58386b06fba186a"]))))

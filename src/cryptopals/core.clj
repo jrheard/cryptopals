@@ -7,6 +7,11 @@
            (javax.crypto Cipher)
            (javax.crypto.spec SecretKeySpec)))
 
+(defn duplicates [xs]
+  (for [[k v] (frequencies xs)
+        :when (> v 1)]
+    [k v]))
+
 ; from https://stackoverflow.com/questions/10062967/clojures-equivalent-to-pythons-encodehex-and-decodehex
 (defn unhexify [s]
   (map
@@ -204,13 +209,19 @@
 
 (comment
 
-  (subs "ajfioweeifjoawjfeaw" 0 5)
+  (duplicates [1 5 3 2 1 3 3])
 
+  (let [ciphertexts (as-> "set_1_challenge_8.txt" $
+                          (io/resource $)
+                          (slurp $)
+                          (split $ #"\n")
+                          (map #(.decode (Base64/getDecoder) %) $))]
 
-  (let [input (parse-base64-file "set_1_challenge_7.txt")]
-    (subs (aes-128-ecb-decrypt input "YELLOW SUBMARINE") 0 33)
-
+    (for [bytes ciphertexts
+          :let [chunks (partition 16 bytes)
+                dupe-chunks (duplicates chunks)]
+          :when (> (count dupe-chunks) 0)]
+      (.encodeToString (Base64/getEncoder) bytes))
 
     )
-
   )
