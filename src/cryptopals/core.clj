@@ -213,10 +213,62 @@
     (concat bytes
             (repeat num-bytes-to-pad num-bytes-to-pad))))
 
+; Implement CBC mode
+; CBC mode is a block cipher mode that allows us to encrypt irregularly-sized messages,
+; despite the fact that a block cipher natively only transforms individual blocks.
+
+; In CBC mode, each ciphertext block is added to the next plaintext block before the
+; next call to the cipher core.
+
+; The first plaintext block, which has no associated previous ciphertext block,
+; is added to a "fake 0th ciphertext block" called the initialization vector, or IV.
+
+; Implement CBC mode by hand by taking the ECB function you wrote earlier, making it
+; encrypt instead of decrypt (verify this by decrypting whatever you encrypt to test),
+; and using your XOR function from the previous exercise to combine them.
+
+; The file here is intelligible (somewhat) when CBC decrypted against "YELLOW SUBMARINE"
+; with an IV of all ASCII 0 (\x00\x00\x00 &c)
+
+(defn cbc-mode-encrypt
+  [plaintext-bytes key-bytes iv-bytes]
+  (apply concat
+         (drop 1 (reduce (fn [ciphertext-bytes block]
+                           (conj ciphertext-bytes
+                                 (fixed-xor (fixed-xor block (last ciphertext-bytes))
+                                            key-bytes)))
+                         [iv-bytes]
+                         (partition 16 (pkcs7-pad plaintext-bytes 16))))))
+
 (comment
-  (apply str (map char (pkcs7-pad (.getBytes "YELLOW SUBMARINE") 20)))
+  ; xxxxxxxxxxx
+  (apply str
+          (map char (cbc-mode-encrypt
+                      (cbc-mode-encrypt
+                        (map int "Hello World Hello World Hello World Hello World")
+                        (map int "YELLOW SUBMARINE")
+                        (repeat 16 0))
+                      (map int "YELLOW SUBMARINE")
+                      (repeat 16 0))))
+
+
+  ; XXXXXX THIS DECRYPTS INCORRECTLY BECAUSE WE NEED TO PASS THE IV WHEN DECRYPTING, RIGHT?
+  (let [[key decryption] (repeating-key-xor-decrypt
+                           (cbc-mode-encrypt
+                             (.getBytes "Hello World Hello World Hello World Hello World")
+                             (.getBytes "YELLOW SUBMARINE")
+                             (repeat 16 0))
+                           16)]
+    (println key)
+    (println decryption)
+    )
+
+
+
+  (pkcs7-pad (.getBytes "YELLOW SUBMARINEBBBB") 20)
 
   (count (.getBytes "YELLOW SUBMARINE"))
 
+  (conj [1 2 3] 5)
 
   )
