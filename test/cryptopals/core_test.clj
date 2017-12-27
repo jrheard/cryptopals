@@ -42,7 +42,7 @@
 
 (deftest set-1-challenge-7
   (let [input (parse-base64-file "set_1_challenge_7.txt")]
-    (is (= (subs (aes-128-ecb-decrypt input "YELLOW SUBMARINE") 0 33)
+    (is (= (subs (bytes->str (aes-128-ecb-decrypt input (.getBytes "YELLOW SUBMARINE"))) 0 33)
            "I'm back and I'm ringin' the bell"))))
 
 (deftest set-1-challenge-8

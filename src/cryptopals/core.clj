@@ -196,16 +196,17 @@
         (clojure.string/replace $ #"\n" "")
         (.decode (Base64/getDecoder) $)))
 
-(defn aes-128-ecb-decrypt [ciphertext-bytes key-string]
-  (let [key (SecretKeySpec. (.getBytes key-string) "AES")
+(defn aes-128-ecb [mode ciphertext-bytes key-bytes]
+  (let [key (SecretKeySpec. key-bytes "AES")
         cipher (Cipher/getInstance "AES/ECB/NoPadding")]
 
-    (.init cipher (Cipher/DECRYPT_MODE) key)
+    (.init cipher mode key)
     (->> ciphertext-bytes
          byte-array
-         (.doFinal cipher)
-         (map char)
-         (apply str))))
+         (.doFinal cipher))))
+
+(def aes-128-ecb-decrypt (partial aes-128-ecb (Cipher/DECRYPT_MODE)))
+(def aes-128-ecb-encrypt (partial aes-128-ecb (Cipher/ENCRYPT_MODE)))
 
 (defn pkcs7-pad [bytes block-length]
   (let [num-bytes-to-pad (- block-length
@@ -213,62 +214,56 @@
     (concat bytes
             (repeat num-bytes-to-pad num-bytes-to-pad))))
 
-; Implement CBC mode
-; CBC mode is a block cipher mode that allows us to encrypt irregularly-sized messages,
-; despite the fact that a block cipher natively only transforms individual blocks.
-
-; In CBC mode, each ciphertext block is added to the next plaintext block before the
-; next call to the cipher core.
-
-; The first plaintext block, which has no associated previous ciphertext block,
-; is added to a "fake 0th ciphertext block" called the initialization vector, or IV.
-
-; Implement CBC mode by hand by taking the ECB function you wrote earlier, making it
-; encrypt instead of decrypt (verify this by decrypting whatever you encrypt to test),
-; and using your XOR function from the previous exercise to combine them.
-
 ; The file here is intelligible (somewhat) when CBC decrypted against "YELLOW SUBMARINE"
 ; with an IV of all ASCII 0 (\x00\x00\x00 &c)
 
 (defn cbc-mode-encrypt
   [plaintext-bytes key-bytes iv-bytes]
   (apply concat
-         (drop 1 (reduce (fn [ciphertext-bytes block]
-                           (conj ciphertext-bytes
-                                 (fixed-xor (fixed-xor block (last ciphertext-bytes))
-                                            key-bytes)))
-                         [iv-bytes]
-                         (partition 16 (pkcs7-pad plaintext-bytes 16))))))
+         ; Remove the IV from the generated sequence.
+         (drop 1
+               (reduce (fn [ciphertext-bytes block]
+                         ; "In CBC mode, each ciphertext block is added to the next plaintext block before the
+                         ; next call to the cipher core."
+                         (conj ciphertext-bytes
+                               (-> block
+                                   (aes-128-ecb-encrypt (last ciphertext-bytes))
+                                   (aes-128-ecb-encrypt key-bytes))))
+                       ; "The first plaintext block, which has no associated previous ciphertext block,
+                       ; is added to a "fake 0th ciphertext block" called the initialization vector, or IV."
+                       [iv-bytes]
+                       (partition 16 (pkcs7-pad plaintext-bytes 16))))))
+
+(defn cbc-mode-decrypt
+  [ciphertext-bytes key-bytes iv-bytes]
+  ; TODO strip off padding
+  (cbc-mode-encrypt ciphertext-bytes key-bytes iv-bytes)
+  )
 
 (comment
+
+  (bytes->str (aes-128-ecb-decrypt
+     (aes-128-ecb-encrypt (map int "YELLOW SUBMARINE") (.getBytes "YELLOW SUBMARINE"))
+     (.getBytes "YELLOW SUBMARINE")
+     ))
+
   ; xxxxxxxxxxx
-  (apply str
-          (map char (cbc-mode-encrypt
-                      (cbc-mode-encrypt
-                        (map int "Hello World Hello World Hello World Hello World")
-                        (map int "YELLOW SUBMARINE")
-                        (repeat 16 0))
-                      (map int "YELLOW SUBMARINE")
-                      (repeat 16 0))))
+  (let [key (.getBytes "YELLOW SUBMARINE")
+        iv (byte-array (repeat 16 0))
+        ciphertext (cbc-mode-encrypt
+                     (map int "Hello World Hello World")
+                     key
+                     iv)
+        decryption (cbc-mode-decrypt ciphertext key iv)]
 
-
-  ; XXXXXX THIS DECRYPTS INCORRECTLY BECAUSE WE NEED TO PASS THE IV WHEN DECRYPTING, RIGHT?
-  (let [[key decryption] (repeating-key-xor-decrypt
-                           (cbc-mode-encrypt
-                             (.getBytes "Hello World Hello World Hello World Hello World")
-                             (.getBytes "YELLOW SUBMARINE")
-                             (repeat 16 0))
-                           16)]
-    (println key)
+    (println ciphertext)
+    ; xxxxxx decryption has a ton of negative numbers; indicates that decryption is incorrectly implemented
     (println decryption)
-    )
-
+    #_(bytes->str decryption))
 
 
   (pkcs7-pad (.getBytes "YELLOW SUBMARINEBBBB") 20)
 
   (count (.getBytes "YELLOW SUBMARINE"))
-
-  (conj [1 2 3] 5)
 
   )
