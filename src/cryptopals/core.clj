@@ -2,7 +2,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :refer [trim lower-case split]]
             [clojure.java.io :as io]
-            [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS]])
+            [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST]])
   (:import java.util.Base64))
 
 ; from https://stackoverflow.com/questions/10062967/clojures-equivalent-to-pythons-encodehex-and-decodehex
@@ -81,12 +81,16 @@
         unrecognized (filter #(and
                                 (not (Character/isLetterOrDigit %))
                                 (not (re-seq okay-symbols (str %))))
-                             s)]
+                             s)
+        awful (filter #(not (or (= (int %) 10)
+                                (<= 32 (int %) 122)))
+                      s)]
 
     (/ (+ (chi-squared-score expected observed)
+          (if (seq awful) 10000 0)
           (/ (* (count unrecognized)
                 (count unrecognized)
-                200)
+                500)
              (count s)))
        (count s))))
 
@@ -102,11 +106,11 @@
 (s/fdef attempt-to-decode-single-xored-bytes
   :ret (s/? (s/tuple char? string? number?)))
 
-(def MAGIC-SINGLE-XOR-DETECTION-STRING-SCORE-THRESHOLD 1)
+(def MAGIC-SINGLE-XOR-DETECTION-STRING-SCORE-THRESHOLD 10)
 
 (defn detect-single-character-xor
   [byte-arr]
-  (let [decode-attempts (->> (map int "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+  (let [decode-attempts (->> (range 128)
                              (map #(attempt-to-decode-single-xored-bytes byte-arr %)))
         valid-attempts (filter #(< (nth % 2) MAGIC-SINGLE-XOR-DETECTION-STRING-SCORE-THRESHOLD)
                                decode-attempts)]
@@ -127,26 +131,33 @@
                  (mapcat #(Integer/toString % 2)
                          (map bit-xor a b)))))
 
+(defn detect-repeating-xor-keysize
+  [ciphertext-bytes]
+  (let [key-sizes-and-distances (for [key-size (range 2 41)]
+                                  (let [chunks (partition key-size ciphertext-bytes)
+                                        distances (map hamming-distance chunks (rest chunks))
+                                        mean-distance (/ (apply + distances) (count distances))]
+
+                                    [key-size
+                                     (float (/ mean-distance key-size))]))]
+
+    (ffirst (sort-by second key-sizes-and-distances))))
+
 (defn repeating-key-xor-decrypt
   [ciphertext-bytes]
-  (let [keys-and-distances (for [key-size (range 2 41)]
-                             (let [first-n (take key-size ciphertext-bytes)
-                                   second-n (take key-size (drop key-size ciphertext-bytes))]
-                               [key-size
-                                (/ (hamming-distance first-n second-n)
-                                   key-size)]))]
+  (let [key-size (detect-repeating-xor-keysize ciphertext-bytes)
 
+        chunked-ciphertext (map (partial apply vector)
+                                (partition key-size ciphertext-bytes))
 
-    (take 5
-          (sort-by second keys-and-distances))))
+        transposed-blocks (for [i (range key-size)]
+                            (select [ALL i] chunked-ciphertext))
 
+        decoded-transposed-blocks (map detect-single-character-xor transposed-blocks)]
+
+    (apply interleave decoded-transposed-blocks)))
 
 (comment
-
-
-  (count (slurp (io/resource "set_1_challenge_6.txt")))
-
-  (count (clojure.string/replace (slurp (io/resource "set_1_challenge_6.txt")) #"\n" ""))
 
   (let [input (as-> "set_1_challenge_6.txt" $
                     (io/resource $)
@@ -154,8 +165,6 @@
                     (clojure.string/replace $ #"\n" "")
                     (.decode (Base64/getDecoder) $))]
 
-    (repeating-key-xor-decrypt input)
-
-    )
+    (apply str (repeating-key-xor-decrypt input)))
 
   )
