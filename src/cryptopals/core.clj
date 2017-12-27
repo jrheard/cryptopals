@@ -113,11 +113,12 @@
   (let [decode-attempts (->> (range 128)
                              (map #(attempt-to-decode-single-xored-bytes byte-arr %)))
         valid-attempts (filter #(< (nth % 2) MAGIC-SINGLE-XOR-DETECTION-STRING-SCORE-THRESHOLD)
-                               decode-attempts)]
+                               decode-attempts)
+        highest-scorer (first (sort-by #(nth % 2)
+                                       valid-attempts))]
 
-    (second (first (sort-by
-                     #(nth % 2)
-                     valid-attempts)))))
+    (when highest-scorer
+      (vec (take 2 highest-scorer)))))
 
 (defn repeating-key-xor-encrypt
   [plaintext-bytes key-bytes]
@@ -153,9 +154,15 @@
         transposed-blocks (for [i (range key-size)]
                             (select [ALL i] chunked-ciphertext))
 
-        decoded-transposed-blocks (map detect-single-character-xor transposed-blocks)]
+        decodings (map detect-single-character-xor transposed-blocks)
 
-    (apply interleave decoded-transposed-blocks)))
+        key (map first decodings)]
+
+    [key
+     (map bit-xor
+          ciphertext-bytes
+          (take (count ciphertext-bytes)
+                (cycle (map int key))))]))
 
 (comment
 
@@ -163,8 +170,14 @@
                     (io/resource $)
                     (slurp $)
                     (clojure.string/replace $ #"\n" "")
-                    (.decode (Base64/getDecoder) $))]
+                    (.decode (Base64/getDecoder) $))
+        [key plaintext-bytes] (repeating-key-xor-decrypt input)]
 
-    (apply str (repeating-key-xor-decrypt input)))
+    #_[(apply str key)
+     (apply str (map char plaintext-bytes))]
+
+    (prn (apply str (map char plaintext-bytes)))
+
+    )
 
   )
