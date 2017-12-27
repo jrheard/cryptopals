@@ -196,12 +196,12 @@
         (clojure.string/replace $ #"\n" "")
         (.decode (Base64/getDecoder) $)))
 
-(defn aes-128-ecb [mode ciphertext-bytes key-bytes]
+(defn aes-128-ecb [mode bytes key-bytes]
   (let [key (SecretKeySpec. key-bytes "AES")
         cipher (Cipher/getInstance "AES/ECB/NoPadding")]
 
     (.init cipher mode key)
-    (->> ciphertext-bytes
+    (->> bytes
          byte-array
          (.doFinal cipher))))
 
@@ -214,40 +214,49 @@
     (concat bytes
             (repeat num-bytes-to-pad num-bytes-to-pad))))
 
-; The file here is intelligible (somewhat) when CBC decrypted against "YELLOW SUBMARINE"
-; with an IV of all ASCII 0 (\x00\x00\x00 &c)
-
 (defn cbc-mode-encrypt
+  ; "In CBC mode, each ciphertext block is added to the next plaintext block before the
+  ; next call to the cipher core."
   [plaintext-bytes key-bytes iv-bytes]
   (apply concat
-         ; Remove the IV from the generated sequence.
-         (drop 1
-               (reduce (fn [ciphertext-bytes block]
-                         ; "In CBC mode, each ciphertext block is added to the next plaintext block before the
-                         ; next call to the cipher core."
-                         (conj ciphertext-bytes
-                               (-> block
-                                   (aes-128-ecb-encrypt (last ciphertext-bytes))
-                                   (aes-128-ecb-encrypt key-bytes))))
-                       ; "The first plaintext block, which has no associated previous ciphertext block,
-                       ; is added to a "fake 0th ciphertext block" called the initialization vector, or IV."
-                       [iv-bytes]
-                       (partition 16 (pkcs7-pad plaintext-bytes 16))))))
+         (reduce (fn [ciphertext-bytes block]
+                   (let [xor-block (if (seq ciphertext-bytes)
+                                     (last ciphertext-bytes)
+                                     iv-bytes)]
+                     (conj ciphertext-bytes
+                           ; Per https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_Block_Chaining_(CBC) :
+                           ; When encrypting, xor on the way in and then encrypt.
+                           (aes-128-ecb-encrypt (fixed-xor block xor-block)
+                                                key-bytes))))
+                 []
+                 (partition 16 (pkcs7-pad plaintext-bytes 16)))))
 
 (defn cbc-mode-decrypt
   [ciphertext-bytes key-bytes iv-bytes]
   ; TODO strip off padding
-  (cbc-mode-encrypt ciphertext-bytes key-bytes iv-bytes)
-  )
+  (let [partitioned (partition 16 ciphertext-bytes)]
+    (apply concat
+           (reduce (fn [plaintext-bytes [block xor-block]]
+
+                     (conj plaintext-bytes
+                           ; Per https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_Block_Chaining_(CBC) :
+                           ; If you're decrypting, decrypt the block and _then_ xor it.
+                           (fixed-xor
+                             (aes-128-ecb-decrypt block key-bytes)
+                             xor-block)))
+                   []
+                   (map vector
+                        partitioned
+                        (concat [iv-bytes]
+                                (drop-last 1 partitioned)))))))
+
 
 (comment
 
-  (bytes->str (aes-128-ecb-decrypt
-     (aes-128-ecb-encrypt (map int "YELLOW SUBMARINE") (.getBytes "YELLOW SUBMARINE"))
-     (.getBytes "YELLOW SUBMARINE")
-     ))
+  (map vector [1 2 3] [:a :b :c])
 
-  ; xxxxxxxxxxx
+
+
   (let [key (.getBytes "YELLOW SUBMARINE")
         iv (byte-array (repeat 16 0))
         ciphertext (cbc-mode-encrypt
@@ -259,7 +268,13 @@
     (println ciphertext)
     ; xxxxxx decryption has a ton of negative numbers; indicates that decryption is incorrectly implemented
     (println decryption)
-    #_(bytes->str decryption))
+    (bytes->str decryption))
+
+
+  (bytes->str (aes-128-ecb-decrypt
+                (aes-128-ecb-encrypt (map int "YELLOW SUBMARINE") (.getBytes "YELLOW SUBMARINE"))
+                (.getBytes "YELLOW SUBMARINE")
+                ))
 
 
   (pkcs7-pad (.getBytes "YELLOW SUBMARINEBBBB") 20)
