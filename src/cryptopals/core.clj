@@ -128,6 +128,7 @@
   [a b]
   (assert (= (count a) (count b)))
 
+  ; "The Hamming distance is just the number of differing bits."
   (count (filter #(= % \1)
                  (mapcat #(Integer/toString % 2)
                          (map bit-xor a b)))))
@@ -135,29 +136,43 @@
 (defn detect-repeating-xor-keysize
   [ciphertext-bytes]
   (let [key-sizes-and-distances (for [key-size (range 2 41)]
+                                  ; "For each KEYSIZE, take the first KEYSIZE worth of bytes, and
+                                  ; the second KEYSIZE worth of bytes, and find the edit distance
+                                  ; between them."
+                                  ;
+                                  ; I found that this advice didn't give workable results, so I take the average
+                                  ; edit distance between _all_ of the chunks in the ciphertext.
                                   (let [chunks (partition key-size ciphertext-bytes)
                                         distances (map hamming-distance chunks (rest chunks))
                                         mean-distance (/ (apply + distances) (count distances))]
 
                                     [key-size
+                                     ; "Normalize this result by dividing by KEYSIZE."
                                      (float (/ mean-distance key-size))]))]
 
     (ffirst (sort-by second key-sizes-and-distances))))
 
 (defn repeating-key-xor-decrypt
   [ciphertext-bytes]
+  ; "The KEYSIZE with the smallest normalized edit distance is probably the key."
   (let [key-size (detect-repeating-xor-keysize ciphertext-bytes)
 
+        ; "Now that you probably know the KEYSIZE: break the ciphertext into blocks of KEYSIZE length."
         chunked-ciphertext (map (partial apply vector)
                                 (partition key-size ciphertext-bytes))
 
+        ; "Now transpose the blocks: make a block that is the first byte of every block,
+        ; and a block that is the second byte of every block, and so on."
         transposed-blocks (for [i (range key-size)]
                             (select [ALL i] chunked-ciphertext))
 
+        ; "Solve each block as if it was single-character XOR. You already have code to do this."
         decodings (map detect-single-character-xor transposed-blocks)
 
         key (map first decodings)]
 
+    ; "For each block, the single-byte XOR key that produces the best looking histogram
+    ; is the repeating-key XOR key byte for that block. Put them together and you have the key."
     [key
      (map bit-xor
           ciphertext-bytes
@@ -165,19 +180,5 @@
                 (cycle (map int key))))]))
 
 (comment
-
-  (let [input (as-> "set_1_challenge_6.txt" $
-                    (io/resource $)
-                    (slurp $)
-                    (clojure.string/replace $ #"\n" "")
-                    (.decode (Base64/getDecoder) $))
-        [key plaintext-bytes] (repeating-key-xor-decrypt input)]
-
-    #_[(apply str key)
-     (apply str (map char plaintext-bytes))]
-
-    (prn (apply str (map char plaintext-bytes)))
-
-    )
 
   )
