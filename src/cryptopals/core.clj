@@ -90,8 +90,6 @@
              (count s)))
        (count s))))
 
-(re-seq #"[:]" "foo:")
-
 (defn attempt-to-decode-single-xored-bytes
   [bytes character]
   (let [character-buffer (repeat (count bytes) character)
@@ -104,11 +102,14 @@
 (s/fdef attempt-to-decode-single-xored-bytes
   :ret (s/? (s/tuple char? string? number?)))
 
+(def MAGIC-SINGLE-XOR-DETECTION-STRING-SCORE-THRESHOLD 1)
+
 (defn detect-single-character-xor
   [byte-arr]
   (let [decode-attempts (->> (map int "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
                              (map #(attempt-to-decode-single-xored-bytes byte-arr %)))
-        valid-attempts (filter #(< (nth % 2) 1) decode-attempts)]
+        valid-attempts (filter #(< (nth % 2) MAGIC-SINGLE-XOR-DETECTION-STRING-SCORE-THRESHOLD)
+                               decode-attempts)]
 
     (second (first (sort-by
                      #(nth % 2)
@@ -118,7 +119,6 @@
   [plaintext-bytes key-bytes]
   (map bit-xor plaintext-bytes (cycle key-bytes)))
 
-
 (defn hamming-distance
   [a b]
   (assert (= (count a) (count b)))
@@ -127,21 +127,35 @@
                  (mapcat #(Integer/toString % 2)
                          (map bit-xor a b)))))
 
+(defn repeating-key-xor-decrypt
+  [ciphertext-bytes]
+  (let [keys-and-distances (for [key-size (range 2 41)]
+                             (let [first-n (take key-size ciphertext-bytes)
+                                   second-n (take key-size (drop key-size ciphertext-bytes))]
+                               [key-size
+                                (/ (hamming-distance first-n second-n)
+                                   key-size)]))]
+
+
+    (take 5
+          (sort-by second keys-and-distances))))
 
 
 (comment
 
-  (let [inputs (split (slurp (io/resource "set_1_challenge_4.txt")) #"\n")]
-    (first (filter identity (map #(detect-single-character-xor (unhexify %))
-                                 inputs))))
 
-  (count (slurp (io/resource "set_1_challenge_4.txt")))
+  (count (slurp (io/resource "set_1_challenge_6.txt")))
 
-  (count (clojure.string/replace (slurp (io/resource "set_1_challenge_4.txt")) #"\n" ""))
+  (count (clojure.string/replace (slurp (io/resource "set_1_challenge_6.txt")) #"\n" ""))
 
-  (let [input (slurp (io/resource "set_1_challenge_4.txt"))]
+  (let [input (as-> "set_1_challenge_6.txt" $
+                    (io/resource $)
+                    (slurp $)
+                    (clojure.string/replace $ #"\n" "")
+                    (.decode (Base64/getDecoder) $))]
 
-    input
+    (repeating-key-xor-decrypt input)
+
     )
 
   )
