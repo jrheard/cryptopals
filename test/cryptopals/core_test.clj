@@ -84,7 +84,7 @@
                                      (reset! mode-picked :cbc)
                                      (cbc %1 %2 %3))]
 
-      (let [ciphertext (aes-encrypt-with-random-key-and-padding (.getBytes FUNKY-MUSIC))]
+      (let [ciphertext (aes-encrypt-with-random-key-and-padding (.getBytes (apply str (repeat 300 "A"))))]
         (is (= (condp = @mode-picked
                  :ecb true
                  :cbc false)
