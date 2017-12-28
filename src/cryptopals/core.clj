@@ -7,6 +7,8 @@
            (javax.crypto Cipher)
            (javax.crypto.spec SecretKeySpec)))
 
+;; Utilities
+
 (defn duplicates [xs]
   (for [[k v] (frequencies xs)
         :when (> v 1)]
@@ -34,6 +36,14 @@
 
 (defn bytes->str [bytes]
   (apply str (map char bytes)))
+
+(defn parse-base64-file
+  [filename]
+  (as-> filename $
+        (io/resource $)
+        (slurp $)
+        (clojure.string/replace $ #"\n" "")
+        (.decode (Base64/getDecoder) $)))
 
 (defn fixed-xor
   [xs ys]
@@ -100,6 +110,8 @@
                 500)
              (count s)))
        (count s))))
+
+;; Nonstandard encryption/decryption functions from set 1
 
 (defn attempt-to-decode-single-xored-bytes
   [bytes character]
@@ -188,15 +200,9 @@
            (take (count ciphertext-bytes)
                  (cycle (map int key))))])))
 
-(defn parse-base64-file
-  [filename]
-  (as-> filename $
-        (io/resource $)
-        (slurp $)
-        (clojure.string/replace $ #"\n" "")
-        (.decode (Base64/getDecoder) $)))
+;; AES encryption/decryption
 
-(defn aes-128-ecb [mode bytes key-bytes]
+(defn aes-ecb [mode bytes key-bytes]
   (let [key (SecretKeySpec. key-bytes "AES")
         cipher (Cipher/getInstance "AES/ECB/NoPadding")]
 
@@ -205,8 +211,8 @@
          byte-array
          (.doFinal cipher))))
 
-(def aes-128-ecb-decrypt (partial aes-128-ecb (Cipher/DECRYPT_MODE)))
-(def aes-128-ecb-encrypt (partial aes-128-ecb (Cipher/ENCRYPT_MODE)))
+(def aes-ecb-decrypt (partial aes-ecb (Cipher/DECRYPT_MODE)))
+(def aes-ecb-encrypt (partial aes-ecb (Cipher/ENCRYPT_MODE)))
 
 (defn pkcs7-pad [bytes block-length]
   (let [num-bytes-to-pad (- block-length
@@ -214,7 +220,7 @@
     (concat bytes
             (repeat num-bytes-to-pad num-bytes-to-pad))))
 
-(defn cbc-mode-encrypt
+(defn aes-cbc-encrypt
   ; "In CBC mode, each ciphertext block is added to the next plaintext block before the
   ; next call to the cipher core."
   [plaintext-bytes key-bytes iv-bytes]
@@ -226,12 +232,12 @@
                      (conj ciphertext-bytes
                            ; Per https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_Block_Chaining_(CBC) :
                            ; When encrypting, xor on the way in and then encrypt.
-                           (aes-128-ecb-encrypt (fixed-xor block xor-block)
-                                                key-bytes))))
+                           (aes-ecb-encrypt (fixed-xor block xor-block)
+                                            key-bytes))))
                  []
                  (partition 16 (pkcs7-pad plaintext-bytes 16)))))
 
-(defn cbc-mode-decrypt
+(defn aes-cbc-decrypt
   [ciphertext-bytes key-bytes iv-bytes]
   (let [partitioned (partition 16 ciphertext-bytes)
         xor-blocks (concat [iv-bytes] (drop-last 1 partitioned))
@@ -240,44 +246,35 @@
                                     (conj plaintext-bytes
                                           ; Per https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_Block_Chaining_(CBC) :
                                           ; If you're decrypting, decrypt the block and _then_ xor it.
-                                          (fixed-xor (aes-128-ecb-decrypt block key-bytes)
+                                          (fixed-xor (aes-ecb-decrypt block key-bytes)
                                                      xor-block)))
                                   []
                                   (map vector partitioned xor-blocks)))
         padding-byte (last decryption)]
     (drop-last padding-byte decryption)))
 
+(defn generate-aes-key []
+  ; "Write a function to generate a random AES key; that's just 16 random bytes."
+  (byte-array (take 16 (repeatedly #(rand-int 256)))))
+
+; Write a function that encrypts data under an unknown key --- that is,
+; a function that generates a random key and encrypts under it.
+(defn aes-encrypt-with-random-key-and-padding
+  [bytes]
+  (let [key (generate-aes-key)
+        num-chars-to-prepend (+ 5 (rand-int 6))
+        num-chars-to-append (+ 5 (rand-int 6))
+        padded-bytes (concat (take num-chars-to-prepend (repeatedly #(rand-int 256)))
+                             bytes
+                             (take num-chars-to-append (repeatedly #(rand-int 256))))]
+    (if (= 0 (rand-int 2))
+      (aes-ecb-encrypt (pkcs7-pad padded-bytes 16) key)
+      (aes-cbc-encrypt padded-bytes key (generate-aes-key)))))
+
 
 (comment
+  (rand-int 6)
 
-  (let [input (parse-base64-file "set_2_challenge_10.txt")]
-    (bytes->str (cbc-mode-decrypt input (.getBytes "YELLOW SUBMARINE") (byte-array (repeat 16 0)))))
-
-
-
-
-  (let [key (.getBytes "YELLOW SUBMARINE")
-        iv (byte-array (repeat 16 0))
-        ciphertext (cbc-mode-encrypt
-                     (map int "Hello World Hello World AAAAFJIEOJFOEWFI")
-                     key
-                     iv)
-        decryption (cbc-mode-decrypt ciphertext key iv)]
-
-    (println ciphertext)
-    ; xxxxxx decryption has a ton of negative numbers; indicates that decryption is incorrectly implemented
-    (println decryption)
-    (bytes->str decryption))
-
-
-  (bytes->str (aes-128-ecb-decrypt
-                (aes-128-ecb-encrypt (map int "YELLOW SUBMARINE") (.getBytes "YELLOW SUBMARINE"))
-                (.getBytes "YELLOW SUBMARINE")
-                ))
-
-
-  (pkcs7-pad (.getBytes "YELLOW SUBMARINEBBBB") 20)
-
-  (count (.getBytes "YELLOW SUBMARINE"))
+  (println (map int (aes-encrypt-with-random-key-and-padding (.getBytes "the key is under the flowerpot"))))
 
   )

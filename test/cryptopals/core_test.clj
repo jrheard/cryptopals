@@ -44,7 +44,7 @@
 
 (deftest set-1-challenge-7
   (let [input (parse-base64-file "set_1_challenge_7.txt")]
-    (is (= (subs (bytes->str (aes-128-ecb-decrypt input (.getBytes "YELLOW SUBMARINE"))) 0 33)
+    (is (= (subs (bytes->str (aes-ecb-decrypt input (.getBytes "YELLOW SUBMARINE"))) 0 33)
            "I'm back and I'm ringin' the bell"))))
 
 (deftest set-1-challenge-8
@@ -69,7 +69,7 @@
 
 (deftest set-2-challenge-10
   (let [input (parse-base64-file "set_2_challenge_10.txt")]
-    (is (= (bytes->str (cbc-mode-decrypt input
-                                         (.getBytes "YELLOW SUBMARINE")
-                                         (byte-array (repeat 16 0))))
+    (is (= (bytes->str (aes-cbc-decrypt input
+                                        (.getBytes "YELLOW SUBMARINE")
+                                        (byte-array (repeat 16 0))))
            FUNKY-MUSIC))))
