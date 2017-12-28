@@ -296,7 +296,11 @@
         last-seen-ciphertext-size
         (recur (inc i) (count ciphertext-size))))))
 
-; TODO make "does-cipher-encryption-use-ecb-mode?" function
+(defn does-cipher-use-ecb-mode?
+  [cipher-encrypt-fn]
+  ; cipher-encrypt-fn must be a one-argument function that just takes a ciphertext arg - no key arg!
+  (ciphertext-likely-encrypted-with-ecb-mode?
+    (cipher-encrypt-fn (.getBytes (apply str (repeat 300 "A"))))))
 
 (comment
 
@@ -308,7 +312,8 @@
         plaintext-bytes (.getBytes (apply str (repeat 300 "A")))
         plaintext-bytes (concat plaintext-bytes bytes-to-append)]
 
-    (discover-cipher-block-size #(aes-ecb-encrypt (pkcs7-pad % 16) key))
+    (println (discover-cipher-block-size #(aes-ecb-encrypt (pkcs7-pad % 16) key)))
+    (does-cipher-use-ecb-mode? #(aes-ecb-encrypt (pkcs7-pad % 16) key))
     )
 
   )
