@@ -55,9 +55,7 @@
                           (map #(.decode (Base64/getDecoder) %) $))
 
         ciphertexts-with-dupes (for [bytes ciphertexts
-                                     :let [chunks (partition 16 bytes)
-                                           dupe-chunks (duplicates chunks)]
-                                     :when (> (count dupe-chunks) 0)]
+                                     :when (ciphertext-likely-encrypted-with-ecb-mode? bytes)]
                                  (.encodeToString (Base64/getEncoder) bytes))]
 
     (is (= ciphertexts-with-dupes
@@ -73,3 +71,21 @@
                                         (.getBytes "YELLOW SUBMARINE")
                                         (byte-array (repeat 16 0))))
            FUNKY-MUSIC))))
+
+(deftest set-2-challenge-11
+  (let [ecb aes-ecb-encrypt
+        cbc aes-cbc-encrypt
+        mode-picked (atom nil)]
+
+    (with-redefs [aes-ecb-encrypt #(do
+                                     (reset! mode-picked :ecb)
+                                     (ecb %1 %2))
+                  aes-cbc-encrypt #(do
+                                     (reset! mode-picked :cbc)
+                                     (cbc %1 %2 %3))]
+
+      (let [ciphertext (aes-encrypt-with-random-key-and-padding (.getBytes FUNKY-MUSIC))]
+        (is (= (condp = @mode-picked
+                 :ecb true
+                 :cbc false)
+               (ciphertext-likely-encrypted-with-ecb-mode? ciphertext)))))))
