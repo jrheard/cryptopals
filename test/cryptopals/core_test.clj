@@ -78,7 +78,8 @@
         mode-picked (atom nil)]
 
     (with-redefs [aes-ecb-encrypt #(do
-                                     (reset! mode-picked :ecb)
+                                     (when (nil? @mode-picked)
+                                       (reset! mode-picked :ecb))
                                      (ecb %1 %2))
                   aes-cbc-encrypt #(do
                                      (reset! mode-picked :cbc)
