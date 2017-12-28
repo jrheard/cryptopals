@@ -316,46 +316,48 @@
     (assert (= cipher-block-size 16))
     (assert (does-cipher-use-ecb-mode? encrypt-fn))
 
-    (loop [decoded-bytes-from-previous-blocks []
-           decoded-bytes-from-this-block []
-           block-num 0
-           ; 15 As
-           too-short-input (vec (repeat (dec cipher-block-size) (int \A)))]
+    (bytes->str
+      (loop [decoded-bytes-from-previous-blocks []
+             decoded-bytes-from-this-block []
+             block-num 0
+             ; 15 As
+             too-short-input (vec (repeat (dec cipher-block-size) (int \A)))]
 
-      (let [plaintext-base (vec (concat decoded-bytes-from-previous-blocks
-                                        too-short-input))
+        (let [ciphertext (take cipher-block-size
+                               (drop (* block-num cipher-block-size)
+                                     (map int
+                                          (encrypt-fn (byte-array too-short-input)))))
 
-            ciphertext (take cipher-block-size
-                             (drop (* block-num cipher-block-size)
-                                   (map int
-                                        (encrypt-fn (byte-array plaintext-base)))))
+              encryptions-map (into {}
+                                    (for [i (conj (range 122) 10)]
+                                      [(take cipher-block-size
+                                             (drop (* block-num cipher-block-size)
+                                                   (map int
+                                                        (encrypt-fn (byte-array (concat too-short-input
+                                                                                        decoded-bytes-from-previous-blocks
+                                                                                        decoded-bytes-from-this-block
+                                                                                        [i]))))))
+                                       i]))
 
-            encryptions-map (into {}
-                                  (for [i (conj (range 32 122) 10)]
-                                    [(take cipher-block-size
-                                           (drop (* block-num cipher-block-size)
-                                                 (map int
-                                                      (encrypt-fn (byte-array (concat plaintext-base
-                                                                                      decoded-bytes-from-this-block
-                                                                                      [i]))))))
-                                     i]))
+              decoded-byte (encryptions-map ciphertext)]
 
-            decoded-byte (encryptions-map ciphertext)]
+          ; TODO - how do we know when we're done?
+          ; when it starts to pkcs7-pad, i guess!
 
-        ; TODO - how do we know when we're done?
-        ; when it starts to pkcs7-pad, i guess!
+          (if decoded-byte
+            (if (= (count too-short-input) 0)
 
-        (println decoded-byte)
+              (recur (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block [decoded-byte])
+                     []
+                     (inc block-num)
+                     (vec (repeat (dec cipher-block-size) (int \A))))
 
-        (if (= (count too-short-input) 0)
-          (recur (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block [decoded-byte])
-                 []
-                 (inc block-num)
-                 (vec (repeat (dec cipher-block-size) (int \A))))
 
-          (recur decoded-bytes-from-previous-blocks
-                 (conj decoded-bytes-from-this-block decoded-byte)
-                 block-num
-                 (rest too-short-input))))))
+              (recur decoded-bytes-from-previous-blocks
+                     (conj decoded-bytes-from-this-block decoded-byte)
+                     block-num
+                     (vec (rest too-short-input))))
+
+            decoded-bytes-from-previous-blocks)))))
 
   )
