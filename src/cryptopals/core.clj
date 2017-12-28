@@ -176,11 +176,11 @@
                                      ; "Normalize this result by dividing by KEYSIZE."
                                      (float (/ mean-distance key-size))]))]
 
+    ; "The KEYSIZE with the smallest normalized edit distance is probably the key."
     (ffirst (sort-by second key-sizes-and-distances))))
 
 (defn repeating-key-xor-decrypt
   ([ciphertext-bytes]
-    ; "The KEYSIZE with the smallest normalized edit distance is probably the key."
    (repeating-key-xor-decrypt ciphertext-bytes (detect-repeating-xor-keysize ciphertext-bytes)))
 
   ([ciphertext-bytes key-size]
@@ -288,32 +288,63 @@
   [cipher-encrypt-fn]
   (loop [i 1
          last-seen-ciphertext-size nil]
-    (let [ciphertext-size (cipher-encrypt-fn (.getBytes (apply str (repeat i "A"))))]
+    (let [ciphertext (cipher-encrypt-fn (.getBytes (apply str (repeat i "A"))))]
 
       (if (and last-seen-ciphertext-size
-               (not= ciphertext-size last-seen-ciphertext-size))
+               (not= (count ciphertext) last-seen-ciphertext-size))
 
-        last-seen-ciphertext-size
-        (recur (inc i) (count ciphertext-size))))))
+        (- (count ciphertext) last-seen-ciphertext-size)
+        (recur (inc i) (count ciphertext))))))
 
 (defn does-cipher-use-ecb-mode?
   [cipher-encrypt-fn]
-  ; cipher-encrypt-fn must be a one-argument function that just takes a ciphertext arg - no key arg!
+  ; cipher-encrypt-fn must be a one-argument function that takes ciphertext-bytes
   (ciphertext-likely-encrypted-with-ecb-mode?
     (cipher-encrypt-fn (.getBytes (apply str (repeat 300 "A"))))))
 
 (comment
 
-  (.getBytes (apply str (repeat 5 "a")))
+  ; Copy your oracle function to a new function that encrypts buffers under ECB mode using
+  ; a consistent but unknown key (for instance, assign a single random key, once, to a global variable).
+
+  ; Now take that same function and have it append to the plaintext, BEFORE ENCRYPTING, the following string:
+
+  ; Knowing the block size, craft an input block that is exactly 1 byte short (for instance,
+  ; if the block size is 8 bytes, make "AAAAAAA"). Think about what the oracle function is
+  ; going to put in that last byte position.
+
+  ; Make a dictionary of every possible last byte by feeding different strings to the oracle;
+  ; for instance, "AAAAAAAA", "AAAAAAAB", "AAAAAAAC", remembering the first block of each invocation.
+
+  ; Match the output of the one-byte-short input to one of the entries in your dictionary.
+  ; You've now discovered the first byte of unknown-string.
 
 
   (let [key (generate-aes-key)
         bytes-to-append (base64->bytes "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
-        plaintext-bytes (.getBytes (apply str (repeat 300 "A")))
-        plaintext-bytes (concat plaintext-bytes bytes-to-append)]
 
-    (println (discover-cipher-block-size #(aes-ecb-encrypt (pkcs7-pad % 16) key)))
-    (does-cipher-use-ecb-mode? #(aes-ecb-encrypt (pkcs7-pad % 16) key))
+        encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat % bytes-to-append)
+                                                16)
+                                     key)
+
+        cipher-block-size (discover-cipher-block-size encrypt-fn)
+
+        too-short-input-string (apply str (repeat (dec cipher-block-size) "A"))
+        ciphertext (take cipher-block-size (map int (encrypt-fn (.getBytes too-short-input-string))))
+
+        first-byte-encryptions-map (into {}
+                                         (for [i (conj (range 32 122) 10)]
+                                           [(take cipher-block-size
+                                                  (map int (encrypt-fn (.getBytes (str too-short-input-string
+                                                                                       (char i))))))
+                                            i]))]
+
+    (assert (= cipher-block-size 16))
+    (assert (does-cipher-use-ecb-mode? encrypt-fn))
+
+    ; IT WORKS!
+    (first-byte-encryptions-map ciphertext)
+
     )
 
   )
