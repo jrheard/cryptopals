@@ -304,22 +304,6 @@
 
 (comment
 
-  ; Copy your oracle function to a new function that encrypts buffers under ECB mode using
-  ; a consistent but unknown key (for instance, assign a single random key, once, to a global variable).
-
-  ; Now take that same function and have it append to the plaintext, BEFORE ENCRYPTING, the following string:
-
-  ; Knowing the block size, craft an input block that is exactly 1 byte short (for instance,
-  ; if the block size is 8 bytes, make "AAAAAAA"). Think about what the oracle function is
-  ; going to put in that last byte position.
-
-  ; Make a dictionary of every possible last byte by feeding different strings to the oracle;
-  ; for instance, "AAAAAAAA", "AAAAAAAB", "AAAAAAAC", remembering the first block of each invocation.
-
-  ; Match the output of the one-byte-short input to one of the entries in your dictionary.
-  ; You've now discovered the first byte of unknown-string.
-
-
   (let [key (generate-aes-key)
         bytes-to-append (base64->bytes "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
 
@@ -327,24 +311,51 @@
                                                 16)
                                      key)
 
-        cipher-block-size (discover-cipher-block-size encrypt-fn)
-
-        too-short-input-string (apply str (repeat (dec cipher-block-size) "A"))
-        ciphertext (take cipher-block-size (map int (encrypt-fn (.getBytes too-short-input-string))))
-
-        first-byte-encryptions-map (into {}
-                                         (for [i (conj (range 32 122) 10)]
-                                           [(take cipher-block-size
-                                                  (map int (encrypt-fn (.getBytes (str too-short-input-string
-                                                                                       (char i))))))
-                                            i]))]
+        cipher-block-size (discover-cipher-block-size encrypt-fn)]
 
     (assert (= cipher-block-size 16))
     (assert (does-cipher-use-ecb-mode? encrypt-fn))
 
-    ; IT WORKS!
-    (first-byte-encryptions-map ciphertext)
+    (loop [decoded-bytes-from-previous-blocks []
+           decoded-bytes-from-this-block []
+           block-num 0
+           ; 15 As
+           too-short-input (vec (repeat (dec cipher-block-size) (int \A)))]
 
-    )
+      (let [plaintext-base (vec (concat decoded-bytes-from-previous-blocks
+                                        too-short-input))
+
+            ciphertext (take cipher-block-size
+                             (drop (* block-num cipher-block-size)
+                                   (map int
+                                        (encrypt-fn (byte-array plaintext-base)))))
+
+            encryptions-map (into {}
+                                  (for [i (conj (range 32 122) 10)]
+                                    [(take cipher-block-size
+                                           (drop (* block-num cipher-block-size)
+                                                 (map int
+                                                      (encrypt-fn (byte-array (concat plaintext-base
+                                                                                      decoded-bytes-from-this-block
+                                                                                      [i]))))))
+                                     i]))
+
+            decoded-byte (encryptions-map ciphertext)]
+
+        ; TODO - how do we know when we're done?
+        ; when it starts to pkcs7-pad, i guess!
+
+        (println decoded-byte)
+
+        (if (= (count too-short-input) 0)
+          (recur (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block [decoded-byte])
+                 []
+                 (inc block-num)
+                 (vec (repeat (dec cipher-block-size) (int \A))))
+
+          (recur decoded-bytes-from-previous-blocks
+                 (conj decoded-bytes-from-this-block decoded-byte)
+                 block-num
+                 (rest too-short-input))))))
 
   )
