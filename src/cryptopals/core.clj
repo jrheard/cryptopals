@@ -358,6 +358,6 @@
                      block-num
                      (vec (rest too-short-input))))
 
-            decoded-bytes-from-previous-blocks)))))
+            (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block))))))
 
   )
