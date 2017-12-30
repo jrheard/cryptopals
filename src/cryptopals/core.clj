@@ -384,6 +384,58 @@
      "role"  "user"}))
 
 (comment
+  ; Take your oracle function from #12.
+  ; Now generate a random count of random bytes and prepend this string to every plaintext.
+  ; You are now doing:
+  ; AES-128-ECB(random-prefix || attacker-controlled || target-bytes, random-key)
+
+  (let [key (generate-aes-key)
+        bytes-to-append (base64->bytes "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
+
+        random-prefix (take (rand-int 200)
+                            (repeatedly #(rand-int 256)))
+
+        encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat random-prefix
+                                                        %
+                                                        bytes-to-append)
+                                                16)
+                                     key)
+
+        ciphertext-1 (encrypt-fn (.getBytes "A"))
+        ciphertext-2 (encrypt-fn (.getBytes "AA"))]
+    (println (discover-cipher-block-size encrypt-fn))
+    (println (does-cipher-use-ecb-mode? encrypt-fn))
+
+
+    ; TODO specter?
+    (ffirst (drop-while (fn [[_ [a b]]]
+                   (= a b))
+                 (map-indexed vector
+                              (map vector
+                                   (partition 16 ciphertext-1)
+                                   (partition 16 ciphertext-2)))))
+
+    )
+
+  (map-indexed vector
+               (map vector [1 2] [:a :b]))
+
+  ; What's harder than challenge #12 about doing this? How would you overcome that obstacle?
+  ; The hint is: you're using all the tools you already have; no crazy math is required.
+  ; Think "STIMULUS" and "RESPONSE".
+
+
+
+  ; presumably 2.13 must have something to do with the solution to 2.14
+  ; what did we learn in 2.13?
+  ; we learned how to do a cut-and-paste attack, which this is _not_
+
+  ; we also learned how to take advantage of situations where you can force
+  ; the plaintext to cross a block boundary
+
+  ; tbh i'm not sure how 2.13 is relevant
+  ; i think we just have to detect how many prepended blocks there are
+  ; and then the offset into the final prepended block at which our plaintext begins
 
   )
 
