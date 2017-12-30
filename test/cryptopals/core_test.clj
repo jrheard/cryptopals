@@ -141,3 +141,30 @@
                decode-profile)
 
            {"email" "AAAAAAAAAAAAA" "uid" "10" "role" "admin"}))))
+
+(deftest set-2-challenge-14
+  ; "Take your oracle function from #12. Now generate a random count of random bytes and
+  ; prepend this string to every plaintext. You are now doing:
+  ; AES-128-ECB(random-prefix || attacker-controlled || target-bytes, random-key)
+  ; Same goal: decrypt the target-bytes."
+  (let [key (generate-aes-key)
+        bytes-to-append (base64->bytes "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
+
+        bytes-to-prepend (rand-int 200)
+        random-prefix (take bytes-to-prepend
+                            (repeatedly #(rand-int 256)))
+
+        encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat random-prefix
+                                                        %
+                                                        bytes-to-append)
+                                                16)
+                                     key)]
+
+    (is (= (discover-cipher-block-size encrypt-fn) 16))
+    (is (true? (does-cipher-use-ecb-mode? encrypt-fn)))
+
+    (is (= (detect-end-of-prepended-bytes encrypt-fn)
+           [(quot bytes-to-prepend 16) (rem bytes-to-prepend 16)]))
+
+    (is (= (bytes->str (byte-at-a-time-ecb-decrypt encrypt-fn))
+           "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n"))))

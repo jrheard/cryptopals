@@ -2,6 +2,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :refer [trim lower-case split]]
             [clojure.java.io :as io]
+            [clojure.core.match :refer [match]]
             [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST INDEXED-VALS collect-one LAST]]
             [ring.util.codec :as codec])
   (:import java.util.Base64
@@ -319,36 +320,94 @@
   (ciphertext-likely-encrypted-with-ecb-mode?
     (cipher-encrypt-fn (.getBytes (apply str (repeat 300 "A"))))))
 
+(defn detect-end-of-prepended-bytes
+  [encrypt-fn]
+  (let [block-size (discover-cipher-block-size encrypt-fn)
+
+        ; Our goal is to discover the index of the first block at which our message begins,
+        ; as well as the _offset_ within that block where any prepended bytes end and our message begins.
+        ;
+        ; To figure this out, we start by generating a message with two blocks' worth of As, and then
+        ; adding one more A at at time until we get to three blocks' worth.
+        ciphertexts (map #(partition block-size %)
+                         (map encrypt-fn
+                              (for [i (range (* 2 block-size)
+                                             (* 3 block-size))]
+                                (map int (repeat i \A)))))
+
+        ; By the time we've generated a message with three blocks' worth of As, the ciphertext
+        ; is guaranteed to contain at least two duplicate blocks. The first duplicate block
+        ; will be the block _after_ the one where the prepended bytes end.
+        ;
+        ; (Unless there weren't any prepended bytes, in which case the 0th block of the ciphertext
+        ; will be the first duplicate block. We'll handle that special case later.)
+        index-of-first-duplicate-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
+                                                        #(= (first %) (second %))]
+                                                       (map vector
+                                                            (last ciphertexts)
+                                                            (rest (last ciphertexts)))))
+
+        ; We can figure out the offset in that block where our message starts by
+        ; figuring out how many As were necessary in order to create those two duplicate blocks.
+        ;
+        ; For instance, if we've got a block size of 8 and there were 5 bytes prepended in this block
+        ; before our message begins, we'll see that we needed to generate (+ (* 2 block-size) 3) As
+        ; before we started to see those two duplicate blocks in the ciphertext.
+        ; (- 8 3) is 5, which is the offset in this block at which our message begins to appear.
+        offset-where-message-begins (- block-size
+                                       (index-of-first-truthy-item
+                                         (for [ciphertext ciphertexts]
+                                           (= (nth ciphertext index-of-first-duplicate-block)
+                                              (nth ciphertext (inc index-of-first-duplicate-block))))))]
+
+    (if (= offset-where-message-begins block-size)
+      [index-of-first-duplicate-block 0] [(dec index-of-first-duplicate-block) offset-where-message-begins])))
+
 (defn byte-at-a-time-ecb-decrypt
   [encrypt-fn]
-  (let [cipher-block-size (discover-cipher-block-size encrypt-fn)]
+  (let [cipher-block-size (discover-cipher-block-size encrypt-fn)
+        [message-start-block message-start-offset] (detect-end-of-prepended-bytes encrypt-fn)]
+
     (loop [decoded-bytes-from-previous-blocks []
            decoded-bytes-from-this-block []
            block-num 0
            ; "Knowing the block size, craft an input block that is exactly 1 byte short
            ; (for instance, if the block size is 8 bytes, make "AAAAAAA"). Think about
            ; what the oracle function is going to put in that last byte position."
-           too-short-input (vec (repeat (dec cipher-block-size) (int \A)))]
+           ;
+           ; We also add enough As to make sure that our message starts at the beginning of
+           ; a fresh block. See 2.14.
+           too-short-input (vec (repeat (+ (dec cipher-block-size)
+                                           (if (> message-start-offset 0)
+                                             (- cipher-block-size message-start-offset)
+                                             0))
+                                        (int \A)))]
 
-      (let [ciphertext (take cipher-block-size
-                             (drop (* block-num cipher-block-size)
-                                   (map int
-                                        (encrypt-fn (byte-array too-short-input)))))
+      (let [bytes-to-drop (* (+ block-num
+                                (if (> message-start-offset 0)
+                                  (inc message-start-block)
+                                  message-start-block))
+                             cipher-block-size)
+
+            get-relevant-block-of-ciphertext (fn [plaintext]
+                                               (->> plaintext
+                                                    byte-array
+                                                    encrypt-fn
+                                                    (map int)
+                                                    (drop bytes-to-drop)
+                                                    (take cipher-block-size)))
+
+            ciphertext (get-relevant-block-of-ciphertext too-short-input)
 
             ; "Make a dictionary of every possible last byte by feeding different strings to the oracle;
             ; for instance, "AAAAAAAA", "AAAAAAAB", "AAAAAAAC"."
             encryptions-map (into {}
                                   (for [i (conj (range 122) 10)]
-                                    [(->> (concat too-short-input
-                                                  decoded-bytes-from-previous-blocks
-                                                  decoded-bytes-from-this-block
-                                                  [i])
-                                          byte-array
-                                          encrypt-fn
-                                          (map int)
-                                          (drop (* block-num cipher-block-size))
-                                          (take cipher-block-size))
-
+                                    [(get-relevant-block-of-ciphertext
+                                       (concat too-short-input
+                                               decoded-bytes-from-previous-blocks
+                                               decoded-bytes-from-this-block
+                                               [i]))
                                      i]))
 
             ; "Match the output of the one-byte-short input to one of the entries in your dictionary."
@@ -394,75 +453,4 @@
      "role"  "user"}))
 
 (comment
-  ; "Take your oracle function from #12.
-  ; Now generate a random count of random bytes and prepend this string to every plaintext.
-  ; You are now doing:
-  ; AES-128-ECB(random-prefix || attacker-controlled || target-bytes, random-key)"
-
-  (let [key (generate-aes-key)
-        bytes-to-append (base64->bytes "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
-
-        random-prefix (take (rand-int 200)
-                            (repeatedly #(rand-int 256)))
-
-        encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat random-prefix
-                                                        %
-                                                        bytes-to-append)
-                                                16)
-                                     key)]
-
-    (let [block-size (discover-cipher-block-size encrypt-fn)
-
-          ; Our goal is to discover the index of the first block at which our message begins,
-          ; as well as the _offset_ within that block where any prepended bytes end and our message begins.
-          ;
-          ; To figure this out, we start by generating a message with two blocks' worth of As, and then
-          ; adding one more A at at time until we get to three blocks' worth.
-          ciphertexts (map #(partition block-size %)
-                           (map encrypt-fn
-                                (for [i (range (* 2 block-size)
-                                               (* 3 block-size))]
-                                  (map int (repeat i \A)))))
-
-          ; By the time we've generated a message with three blocks' worth of As, the ciphertext
-          ; is guaranteed to contain at least two duplicate blocks. The first duplicate block
-          ; will be the block _after_ the one where the prepended bytes end.
-          ;
-          ; (Unless there weren't any prepended bytes, in which case the 0th block of the ciphertext
-          ; will be the first duplicate block. We'll handle that special case later)
-          index-of-first-duplicate-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
-                                                          #(= (first %) (second %))]
-                                                         (map vector
-                                                              (last ciphertexts)
-                                                              (rest (last ciphertexts)))))
-
-          index-of-first-block-that-contains-message (dec index-of-first-duplicate-block)
-
-          ; We can figure out the offset in that block where our message starts by
-          ; figuring out how many As were necessary in order to create those two duplicate blocks.
-          ;
-          ; For instance, if we've got a block size of 8 and there were 5 bytes prepended in this block
-          ; before our message begins, we'll see that we needed to generate (+ (* 2 block-size) 3) As
-          ; before we started to see those duplicate blocks in the ciphertext.
-          ; (- 8 3) is 5, which is the offset in this block at which our message begins to appear.
-          offset-where-message-begins (- block-size
-                                         (index-of-first-truthy-item
-                                           (for [ciphertext ciphertexts]
-                                             (= (nth ciphertext index-of-first-duplicate-block)
-                                                (nth ciphertext (inc index-of-first-duplicate-block))))))
-
-          ; Deal with situations where there weren't any prepended bytes in this block,
-          ; either because there weren't any prepended bytes at _all_ in this cipher
-          ; or because the number of prepended bytes aligns precisely with the cipher's block size.
-          index-of-first-block-that-contains-message (max 0
-                                                          (if (= offset-where-message-begins block-size)
-                                                            (inc index-of-first-block-that-contains-message)
-                                                            index-of-first-block-that-contains-message))]
-
-      [index-of-first-block-that-contains-message
-       (if (= offset-where-message-begins block-size)
-         0
-         offset-where-message-begins)]))
-
   )
-
