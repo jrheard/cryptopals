@@ -97,12 +97,44 @@
 
         encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat % bytes-to-append)
                                                 16)
-                                     key)
-
-        cipher-block-size (discover-cipher-block-size encrypt-fn)]
-
-    (is (= cipher-block-size 16))
+                                     key)]
+    (is (= (discover-cipher-block-size encrypt-fn) 16))
     (is (true? (does-cipher-use-ecb-mode? encrypt-fn)))
 
     (is (= (bytes->str (byte-at-a-time-ecb-decrypt encrypt-fn))
            "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n"))))
+
+(deftest set-2-challenge-13
+  (let [key (generate-aes-key)
+        encrypt-fn #(as-> % $
+                          (map char $)
+                          (apply str $)
+                          (profile-for $)
+                          (encode-profile $)
+                          (.getBytes $)
+                          (pkcs7-pad $ 16)
+                          (aes-ecb-encrypt $ key))
+
+        ; The ciphertexts we'll be generating and snipping together:
+        ;  block           1               2               3
+        ;  01234567890123456789012345678901234567890123456789
+        ;  email=AAAAAAAAAAAAA&uid=10&role=admin
+        ;  email=AAAAAAAAAAAAAAAAAAAAAAAAAAadmin[PADDING]
+
+        ; Ciphertext 1 is used for blocks 1 and 2
+        ciphertext-1 (encrypt-fn (apply str (repeat 13 "A")))
+
+        ; Ciphertext 2 gives us block 3, which has "admin" followed by pkcs-7 padding bytes.
+        ciphertext-2 (encrypt-fn (str (apply str (repeat 26 "A"))
+                                      "admin"
+                                      (apply str (repeat 11 (char 11)))))
+
+        payload (concat (take 32 ciphertext-1)
+                        (take 16 (drop 32 ciphertext-2)))]
+
+    (is (= (-> payload
+               (aes-ecb-decrypt key)
+               pkcs7-depad
+               bytes->str
+               decode-profile)
+           {"email" "AAAAAAAAAAAAA" "uid" "10" "role" "admin"}))))

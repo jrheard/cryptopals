@@ -368,7 +368,9 @@
 
 (defn encode-profile
   [profile-map]
-  (codec/form-encode profile-map))
+  (clojure.string/join "&"
+                       (for [[k v] profile-map]
+                         (str k "=" v))))
 
 (defn profile-for
   [email]
@@ -378,22 +380,6 @@
      "role"  "user"}))
 
 (comment
-  (let [key (generate-aes-key)
-        email "foo@bar.com"
-        ciphertext (aes-ecb-encrypt (map int (pkcs7-pad (encode-profile (profile-for email))
-                                                        16))
-                                    key)]
-    (-> ciphertext
-        (aes-ecb-decrypt key)
-        pkcs7-depad
-        bytes->str
-        decode-profile)
-
-    )
-
-  ; Now, two more easy functions. Generate a random AES key, then:
-  ; Encrypt the encoded user profile under the key; "provide" that to the "attacker".
-  ; Decrypt the encoded user profile and parse it.
 
   )
 
