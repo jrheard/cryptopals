@@ -16,6 +16,16 @@
         :when (> v 1)]
     [k v]))
 
+(defn index-of-first-truthy-item
+  ([xs]
+   (index-of-first-truthy-item xs 0))
+  ([xs curr-index]
+   (cond
+     (not (seq xs)) -1
+     (first xs) curr-index
+     :else (index-of-first-truthy-item (rest xs) (inc curr-index)))))
+
+
 ; from https://stackoverflow.com/questions/10062967/clojures-equivalent-to-pythons-encodehex-and-decodehex
 (defn unhexify [s]
   (map
@@ -405,37 +415,42 @@
                                                   16)
                                        key))
 
-        ciphertexts (map #(partition 16 %)
+        block-size 16
+
+        ciphertexts (map #(partition block-size %)
                          (map encrypt-fn
-                              (for [i (range 17)]
+                              (for [i (range (* 2 block-size)
+                                             (* 3 block-size))]
                                 (map int (repeat i \A)))))
 
-        index-of-first-differing-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
-                                                        #(not= (first %) (second %))]
+        index-of-first-duplicate-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
+                                                        #(= (first %) (second %))]
                                                        (map vector
-                                                            (first ciphertexts)
-                                                            (second ciphertexts))))
+                                                            (last ciphertexts)
+                                                            (rest (last ciphertexts)))))
 
-        num-blocks-in-ciphertexts (map count ciphertexts)
+        index-of-first-block-that-contains-message (max 0 (dec index-of-first-duplicate-block))
 
-        min-num-characters-of-plaintext-that-causes-ciphertext-to-gain-a-block
-        (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
-                         #(not= % (first num-blocks-in-ciphertexts))]
-                        num-blocks-in-ciphertexts))
+        offset-where-message-begins (- block-size
+                                       (index-of-first-truthy-item
+                                         (for [ciphertext ciphertexts]
+                                           (= (nth ciphertext index-of-first-duplicate-block)
+                                              (nth ciphertext (inc index-of-first-duplicate-block))))))
 
-        ; Now we know that the block at `index-of-first-differing-block` is the first block
-        ; where our actual message begins to appear in the ciphertext.
         ; Next up: discover the _offset_ within that block at which our plaintext begins.
+        ; We do this by generating two blocks worth of As,
 
         ]
-    ;(println (discover-cipher-block-size encrypt-fn))
-    ;(println (does-cipher-use-ecb-mode? encrypt-fn))
     (println (count bytes-to-append))
     (println (count random-prefix))
     (println (quot (count random-prefix) 16))
-    (println index-of-first-differing-block)
-    (println num-blocks-in-ciphertexts)
-    (println min-num-characters-of-plaintext-that-causes-ciphertext-to-gain-a-block)
+    (println (rem (count random-prefix) 16))
+
+    (println "****")
+
+    (println index-of-first-duplicate-block)
+    (println index-of-first-block-that-contains-message)
+    (println offset-where-message-begins)
 
     ; riiiiiight
     ; this is complicated by the fact that we're also appending stuff in addition to prepending
@@ -475,6 +490,8 @@
   ; 00000AAAAAAAAAAAAAAAAAAA111111
 
   ; at this point, the two blocks immediately after index-of-first-differing-block are equal
+  ; and we've added 16 + 3 blocks
+  ; so we know that there are 8 - 3 blocks prepended in index-of-first-differing block, which is 5, which is correct
 
 
   (rem 122 16)
