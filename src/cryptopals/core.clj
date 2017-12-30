@@ -286,6 +286,8 @@
 
 (defn discover-cipher-block-size
   [cipher-encrypt-fn]
+  ; "Feed identical bytes of your-string to the function 1 at a time --- start with 1 byte ("A"),
+  ; then "AA", then "AAA" and so on. Discover the block size of the cipher."
   (loop [i 1
          last-seen-ciphertext-size nil]
     (let [ciphertext (cipher-encrypt-fn (.getBytes (apply str (repeat i "A"))))]
@@ -302,62 +304,62 @@
   (ciphertext-likely-encrypted-with-ecb-mode?
     (cipher-encrypt-fn (.getBytes (apply str (repeat 300 "A"))))))
 
+(defn byte-at-a-time-ecb-decrypt
+  [encrypt-fn]
+  (let [cipher-block-size (discover-cipher-block-size encrypt-fn)]
+    (loop [decoded-bytes-from-previous-blocks []
+           decoded-bytes-from-this-block []
+           block-num 0
+           ; "Knowing the block size, craft an input block that is exactly 1 byte short
+           ; (for instance, if the block size is 8 bytes, make "AAAAAAA"). Think about
+           ; what the oracle function is going to put in that last byte position."
+           too-short-input (vec (repeat (dec cipher-block-size) (int \A)))]
+
+      (let [ciphertext (take cipher-block-size
+                             (drop (* block-num cipher-block-size)
+                                   (map int
+                                        (encrypt-fn (byte-array too-short-input)))))
+
+            ; "Make a dictionary of every possible last byte by feeding different strings to the oracle;
+            ; for instance, "AAAAAAAA", "AAAAAAAB", "AAAAAAAC"."
+            encryptions-map (into {}
+                                  (for [i (conj (range 122) 10)]
+                                    [(->> (concat too-short-input
+                                                  decoded-bytes-from-previous-blocks
+                                                  decoded-bytes-from-this-block
+                                                  [i])
+                                          byte-array
+                                          encrypt-fn
+                                          (map int)
+                                          (drop (* block-num cipher-block-size))
+                                          (take cipher-block-size))
+
+                                     i]))
+
+            ; "Match the output of the one-byte-short input to one of the entries in your dictionary."
+            decoded-byte (encryptions-map ciphertext)]
+
+        (if decoded-byte
+          (if (= (count too-short-input) 0)
+            ; We've reached the end of a block; add this block's bytes to
+            ; decoded-bytes-from-previous-blocks and recur.
+            (recur (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block [decoded-byte])
+                   []
+                   (inc block-num)
+                   (vec (repeat (dec cipher-block-size) (int \A))))
+
+            ; Otherwise, record this decoded byte in decoded-bytes-from-this-block and recur.
+            (recur decoded-bytes-from-previous-blocks
+                   (conj decoded-bytes-from-this-block decoded-byte)
+                   block-num
+                   (vec (rest too-short-input))))
+
+          ; If we couldn't decrypt this byte, we've reached a pkcs-7 padding byte and we're done!
+          (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block))))))
+
 (comment
 
-  (let [key (generate-aes-key)
-        bytes-to-append (base64->bytes "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
 
-        encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat % bytes-to-append)
-                                                16)
-                                     key)
-
-        cipher-block-size (discover-cipher-block-size encrypt-fn)]
-
-    (assert (= cipher-block-size 16))
-    (assert (does-cipher-use-ecb-mode? encrypt-fn))
-
-    (bytes->str
-      (loop [decoded-bytes-from-previous-blocks []
-             decoded-bytes-from-this-block []
-             block-num 0
-             ; 15 As
-             too-short-input (vec (repeat (dec cipher-block-size) (int \A)))]
-
-        (let [ciphertext (take cipher-block-size
-                               (drop (* block-num cipher-block-size)
-                                     (map int
-                                          (encrypt-fn (byte-array too-short-input)))))
-
-              encryptions-map (into {}
-                                    (for [i (conj (range 122) 10)]
-                                      [(take cipher-block-size
-                                             (drop (* block-num cipher-block-size)
-                                                   (map int
-                                                        (encrypt-fn (byte-array (concat too-short-input
-                                                                                        decoded-bytes-from-previous-blocks
-                                                                                        decoded-bytes-from-this-block
-                                                                                        [i]))))))
-                                       i]))
-
-              decoded-byte (encryptions-map ciphertext)]
-
-          ; TODO - how do we know when we're done?
-          ; when it starts to pkcs7-pad, i guess!
-
-          (if decoded-byte
-            (if (= (count too-short-input) 0)
-
-              (recur (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block [decoded-byte])
-                     []
-                     (inc block-num)
-                     (vec (repeat (dec cipher-block-size) (int \A))))
-
-
-              (recur decoded-bytes-from-previous-blocks
-                     (conj decoded-bytes-from-this-block decoded-byte)
-                     block-num
-                     (vec (rest too-short-input))))
-
-            (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block))))))
 
   )
+

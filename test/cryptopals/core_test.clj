@@ -90,3 +90,19 @@
                  :ecb true
                  :cbc false)
                (ciphertext-likely-encrypted-with-ecb-mode? ciphertext)))))))
+
+(deftest set-2-challenge-12
+  (let [key (generate-aes-key)
+        bytes-to-append (base64->bytes "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
+
+        encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat % bytes-to-append)
+                                                16)
+                                     key)
+
+        cipher-block-size (discover-cipher-block-size encrypt-fn)]
+
+    (is (= cipher-block-size 16))
+    (is (true? (does-cipher-use-ecb-mode? encrypt-fn)))
+
+    (is (= (bytes->str (byte-at-a-time-ecb-decrypt encrypt-fn))
+           "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n"))))
