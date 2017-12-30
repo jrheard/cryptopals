@@ -367,13 +367,17 @@
   (codec/form-decode profile-string))
 
 (defn encode-profile
+  ; "Write a k=v parsing routine, as if for a structured cookie."
   [profile-map]
   (clojure.string/join "&"
                        (for [[k v] profile-map]
                          (str k "=" v))))
 
 (defn profile-for
+  ; "Now write a function that encodes a user profile in that format, given an email address."
   [email]
+  ; "Your "profile_for" function should not allow encoding metacharacters (& and =).
+  ; Eat them, quote them, whatever you want to do."
   (let [stripped-email (clojure.string/replace email #"[=&]" "")]
     {"email" stripped-email
      "uid"   10

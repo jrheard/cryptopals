@@ -105,6 +105,8 @@
            "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n"))))
 
 (deftest set-2-challenge-13
+  ; "Using only the user input to profile_for() (as an oracle to generate "valid" ciphertexts)
+  ; and the ciphertexts themselves, make a role=admin profile."
   (let [key (generate-aes-key)
         encrypt-fn #(as-> % $
                           (map char $)
