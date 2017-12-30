@@ -166,5 +166,6 @@
     (is (= (detect-end-of-prepended-bytes encrypt-fn)
            [(quot bytes-to-prepend 16) (rem bytes-to-prepend 16)]))
 
+    ; TODO will this fail if the pkcs-7 padding is 10 bytes?
     (is (= (bytes->str (byte-at-a-time-ecb-decrypt encrypt-fn))
            "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n"))))

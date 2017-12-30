@@ -2,7 +2,6 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :refer [trim lower-case split]]
             [clojure.java.io :as io]
-            [clojure.core.match :refer [match]]
             [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST INDEXED-VALS collect-one LAST]]
             [ring.util.codec :as codec])
   (:import java.util.Base64
