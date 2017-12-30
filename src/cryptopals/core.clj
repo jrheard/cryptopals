@@ -394,10 +394,10 @@
      "role"  "user"}))
 
 (comment
-  ; Take your oracle function from #12.
+  ; "Take your oracle function from #12.
   ; Now generate a random count of random bytes and prepend this string to every plaintext.
   ; You are now doing:
-  ; AES-128-ECB(random-prefix || attacker-controlled || target-bytes, random-key)
+  ; AES-128-ECB(random-prefix || attacker-controlled || target-bytes, random-key)"
 
   (let [key (generate-aes-key)
         bytes-to-append (base64->bytes "Um9sbGluJyBpbiBteSA1LjAKV2l0aCBteSByYWctdG9wIGRvd24gc28gbXkgaGFpciBjYW4gYmxvdwpUaGUgZ2lybGllcyBvbiBzdGFuZGJ5IHdhdmluZyBqdXN0IHRvIHNheSBoaQpEaWQgeW91IHN0b3A/IE5vLCBJIGp1c3QgZHJvdmUgYnkK")
@@ -405,57 +405,48 @@
         random-prefix (take (rand-int 200)
                             (repeatedly #(rand-int 256)))
 
-        encrypt-fn #(do
-                      (println "encrypting this many bytes " (count (concat random-prefix
-                                                                            %
-                                                                            bytes-to-append)))
-                      (aes-ecb-encrypt (pkcs7-pad (concat random-prefix
-                                                          %
-                                                          bytes-to-append)
-                                                  16)
-                                       key))
+        encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat random-prefix
+                                                        %
+                                                        bytes-to-append)
+                                                16)
+                                     key)]
 
-        block-size 16
+    (let [block-size (discover-cipher-block-size encrypt-fn)
 
-        ciphertexts (map #(partition block-size %)
-                         (map encrypt-fn
-                              (for [i (range (* 2 block-size)
-                                             (* 3 block-size))]
-                                (map int (repeat i \A)))))
+          ; Our goal is to discover the index of the first block at which our message begins,
+          ; as well as the _offset_ within that block where any prepended bytes end and our message begins.
+          ; To figure this out, we start by generating two blocks' worth of
+          ciphertexts (map #(partition block-size %)
+                           (map encrypt-fn
+                                (for [i (range (* 2 block-size)
+                                               (* 3 block-size))]
+                                  (map int (repeat i \A)))))
 
-        index-of-first-duplicate-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
-                                                        #(= (first %) (second %))]
-                                                       (map vector
-                                                            (last ciphertexts)
-                                                            (rest (last ciphertexts)))))
+          index-of-first-duplicate-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
+                                                          #(= (first %) (second %))]
+                                                         (map vector
+                                                              (last ciphertexts)
+                                                              (rest (last ciphertexts)))))
 
-        index-of-first-block-that-contains-message (max 0 (dec index-of-first-duplicate-block))
+          index-of-first-block-that-contains-message (dec index-of-first-duplicate-block)
 
-        offset-where-message-begins (- block-size
-                                       (index-of-first-truthy-item
-                                         (for [ciphertext ciphertexts]
-                                           (= (nth ciphertext index-of-first-duplicate-block)
-                                              (nth ciphertext (inc index-of-first-duplicate-block))))))
+          offset-where-message-begins (- block-size
+                                         (index-of-first-truthy-item
+                                           (for [ciphertext ciphertexts]
+                                             (= (nth ciphertext index-of-first-duplicate-block)
+                                                (nth ciphertext (inc index-of-first-duplicate-block))))))
 
-        ; Next up: discover the _offset_ within that block at which our plaintext begins.
-        ; We do this by generating two blocks worth of As,
+          index-of-first-block-that-contains-message (max 0
+                                                          (if (= offset-where-message-begins block-size)
+                                                            (inc index-of-first-block-that-contains-message)
+                                                            index-of-first-block-that-contains-message))]
 
-        ]
-    (println (count bytes-to-append))
-    (println (count random-prefix))
-    (println (quot (count random-prefix) 16))
-    (println (rem (count random-prefix) 16))
+      [index-of-first-block-that-contains-message
+       (if (= offset-where-message-begins block-size)
+         0
+         offset-where-message-begins)]
 
-    (println "****")
-
-    (println index-of-first-duplicate-block)
-    (println index-of-first-block-that-contains-message)
-    (println offset-where-message-begins)
-
-    ; riiiiiight
-    ; this is complicated by the fact that we're also appending stuff in addition to prepending
-
-    )
+      ))
 
   ; assume we have a block size of 8
   ; and we're prepending five 0s
