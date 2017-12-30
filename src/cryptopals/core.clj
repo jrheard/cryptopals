@@ -2,7 +2,8 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :refer [trim lower-case split]]
             [clojure.java.io :as io]
-            [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST]])
+            [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST]]
+            [ring.util.codec :as codec])
   (:import java.util.Base64
            (javax.crypto Cipher)
            (javax.crypto.spec SecretKeySpec)))
@@ -221,11 +222,16 @@
 (def aes-ecb-decrypt (partial aes-ecb (Cipher/DECRYPT_MODE)))
 (def aes-ecb-encrypt (partial aes-ecb (Cipher/ENCRYPT_MODE)))
 
-(defn pkcs7-pad [bytes block-length]
+(defn pkcs7-pad
+  [bytes block-length]
   (let [num-bytes-to-pad (- block-length
                             (rem (count bytes) block-length))]
     (concat bytes
             (repeat num-bytes-to-pad num-bytes-to-pad))))
+
+(defn pkcs7-depad
+  [bytes]
+  (drop-last (last bytes) bytes))
 
 (defn aes-cbc-encrypt
   ; "In CBC mode, each ciphertext block is added to the next plaintext block before the
@@ -256,9 +262,8 @@
                                           (fixed-xor (aes-ecb-decrypt block key-bytes)
                                                      xor-block)))
                                   []
-                                  (map vector partitioned xor-blocks)))
-        padding-byte (last decryption)]
-    (drop-last padding-byte decryption)))
+                                  (map vector partitioned xor-blocks)))]
+    (pkcs7-depad decryption)))
 
 (defn generate-aes-key []
   ; "Write a function to generate a random AES key; that's just 16 random bytes."
@@ -357,9 +362,38 @@
           ; If we couldn't decrypt this byte, we've reached a pkcs-7 padding byte and we're done!
           (concat decoded-bytes-from-previous-blocks decoded-bytes-from-this-block))))))
 
+(defn decode-profile
+  [profile-string]
+  (codec/form-decode profile-string))
+
+(defn encode-profile
+  [profile-map]
+  (codec/form-encode profile-map))
+
+(defn profile-for
+  [email]
+  (let [stripped-email (clojure.string/replace email #"[=&]" "")]
+    {"email" stripped-email
+     "uid"   10
+     "role"  "user"}))
+
 (comment
+  (let [key (generate-aes-key)
+        email "foo@bar.com"
+        ciphertext (aes-ecb-encrypt (map int (pkcs7-pad (encode-profile (profile-for email))
+                                                        16))
+                                    key)]
+    (-> ciphertext
+        (aes-ecb-decrypt key)
+        pkcs7-depad
+        bytes->str
+        decode-profile)
 
+    )
 
+  ; Now, two more easy functions. Generate a random AES key, then:
+  ; Encrypt the encoded user profile under the key; "provide" that to the "attacker".
+  ; Decrypt the encoded user profile and parse it.
 
   )
 
