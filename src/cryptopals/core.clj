@@ -415,13 +415,21 @@
 
           ; Our goal is to discover the index of the first block at which our message begins,
           ; as well as the _offset_ within that block where any prepended bytes end and our message begins.
-          ; To figure this out, we start by generating two blocks' worth of
+          ;
+          ; To figure this out, we start by generating a message with two blocks' worth of As, and then
+          ; adding one more A at at time until we get to three blocks' worth.
           ciphertexts (map #(partition block-size %)
                            (map encrypt-fn
                                 (for [i (range (* 2 block-size)
                                                (* 3 block-size))]
                                   (map int (repeat i \A)))))
 
+          ; By the time we've generated a message with three blocks' worth of As, the ciphertext
+          ; is guaranteed to contain at least two duplicate blocks. The first duplicate block
+          ; will be the block _after_ the one where the prepended bytes end.
+          ;
+          ; (Unless there weren't any prepended bytes, in which case the 0th block of the ciphertext
+          ; will be the first duplicate block. We'll handle that special case later)
           index-of-first-duplicate-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
                                                           #(= (first %) (second %))]
                                                          (map vector
@@ -430,12 +438,22 @@
 
           index-of-first-block-that-contains-message (dec index-of-first-duplicate-block)
 
+          ; We can figure out the offset in that block where our message starts by
+          ; figuring out how many As were necessary in order to create those two duplicate blocks.
+          ;
+          ; For instance, if we've got a block size of 8 and there were 5 bytes prepended in this block
+          ; before our message begins, we'll see that we needed to generate (+ (* 2 block-size) 3) As
+          ; before we started to see those duplicate blocks in the ciphertext.
+          ; (- 8 3) is 5, which is the offset in this block at which our message begins to appear.
           offset-where-message-begins (- block-size
                                          (index-of-first-truthy-item
                                            (for [ciphertext ciphertexts]
                                              (= (nth ciphertext index-of-first-duplicate-block)
                                                 (nth ciphertext (inc index-of-first-duplicate-block))))))
 
+          ; Deal with situations where there weren't any prepended bytes in this block,
+          ; either because there weren't any prepended bytes at _all_ in this cipher
+          ; or because the number of prepended bytes aligns precisely with the cipher's block size.
           index-of-first-block-that-contains-message (max 0
                                                           (if (= offset-where-message-begins block-size)
                                                             (inc index-of-first-block-that-contains-message)
@@ -444,69 +462,7 @@
       [index-of-first-block-that-contains-message
        (if (= offset-where-message-begins block-size)
          0
-         offset-where-message-begins)]
-
-      ))
-
-  ; assume we have a block size of 8
-  ; and we're prepending five 0s
-  ; and we're appending six 1s
-  ; for a total of 11 characters, which rounds up to two blocks
-  ;         1       2
-  ; 01234567890123456789
-  ; 00000111111
-
-  ; then the number of As that makes us grow to a third blocks will be six
-  ;         1       2
-  ; 01234567890123456789
-  ; 00000AAAAAA111111
-
-  ; if we have number-of-As, how can we get num-prepended and num-appended?
-
-  ; we should be able to get num-preprended by generating two blocks worth of As
-  ; and then adding As over and over
-  ; until the two blocks after index-of-first-differing-block become equal
-  ; then subtracting 2 * block-length
-  ; like this
-
-  ; start with this many As
-  ;         1       2       3       4
-  ; 0123456789012345678901234567890123456789
-  ; 00000AAAAAAAAAAAAAAAA111111
-  ;
-
-  ; then keep going until you get to this many
-  ;         1       2       3       4
-  ; 0123456789012345678901234567890123456789
-  ; 00000AAAAAAAAAAAAAAAAAAA111111
-
-  ; at this point, the two blocks immediately after index-of-first-differing-block are equal
-  ; and we've added 16 + 3 blocks
-  ; so we know that there are 8 - 3 blocks prepended in index-of-first-differing block, which is 5, which is correct
-
-
-  (rem 122 16)
-
-  (drop -1 [1 2 3])
-
-
-
-  ; What's harder than challenge #12 about doing this? How would you overcome that obstacle?
-  ; The hint is: you're using all the tools you already have; no crazy math is required.
-  ; Think "STIMULUS" and "RESPONSE".
-
-
-
-  ; presumably 2.13 must have something to do with the solution to 2.14
-  ; what did we learn in 2.13?
-  ; we learned how to do a cut-and-paste attack, which this is _not_
-
-  ; we also learned how to take advantage of situations where you can force
-  ; the plaintext to cross a block boundary
-
-  ; tbh i'm not sure how 2.13 is relevant
-  ; i think we just have to detect how many prepended blocks there are
-  ; and then the offset into the final prepended block at which our plaintext begins
+         offset-where-message-begins)]))
 
   )
 
