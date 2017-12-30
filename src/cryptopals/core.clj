@@ -395,34 +395,91 @@
         random-prefix (take (rand-int 200)
                             (repeatedly #(rand-int 256)))
 
-        encrypt-fn #(aes-ecb-encrypt (pkcs7-pad (concat random-prefix
-                                                        %
-                                                        bytes-to-append)
-                                                16)
-                                     key)
+        encrypt-fn #(do
+                      (println "encrypting this many bytes " (count (concat random-prefix
+                                                                            %
+                                                                            bytes-to-append)))
+                      (aes-ecb-encrypt (pkcs7-pad (concat random-prefix
+                                                          %
+                                                          bytes-to-append)
+                                                  16)
+                                       key))
 
-        ciphertexts (map encrypt-fn
-                         (for [i (range 17)]
-                           (map int (repeat i \A))))
+        ciphertexts (map #(partition 16 %)
+                         (map encrypt-fn
+                              (for [i (range 17)]
+                                (map int (repeat i \A)))))
 
         index-of-first-differing-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
                                                         #(not= (first %) (second %))]
                                                        (map vector
-                                                            (partition 16 (first ciphertexts))
-                                                            (partition 16 (second ciphertexts)))))
+                                                            (first ciphertexts)
+                                                            (second ciphertexts))))
+
+        num-blocks-in-ciphertexts (map count ciphertexts)
+
+        min-num-characters-of-plaintext-that-causes-ciphertext-to-gain-a-block
+        (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
+                         #(not= % (first num-blocks-in-ciphertexts))]
+                        num-blocks-in-ciphertexts))
 
         ; Now we know that the block at `index-of-first-differing-block` is the first block
         ; where our actual message begins to appear in the ciphertext.
         ; Next up: discover the _offset_ within that block at which our plaintext begins.
 
         ]
-    (println (discover-cipher-block-size encrypt-fn))
-    (println (does-cipher-use-ecb-mode? encrypt-fn))
+    ;(println (discover-cipher-block-size encrypt-fn))
+    ;(println (does-cipher-use-ecb-mode? encrypt-fn))
+    (println (count bytes-to-append))
     (println (count random-prefix))
     (println (quot (count random-prefix) 16))
-    index-of-first-differing-block
+    (println index-of-first-differing-block)
+    (println num-blocks-in-ciphertexts)
+    (println min-num-characters-of-plaintext-that-causes-ciphertext-to-gain-a-block)
+
+    ; riiiiiight
+    ; this is complicated by the fact that we're also appending stuff in addition to prepending
 
     )
+
+  ; assume we have a block size of 8
+  ; and we're prepending five 0s
+  ; and we're appending six 1s
+  ; for a total of 11 characters, which rounds up to two blocks
+  ;         1       2
+  ; 01234567890123456789
+  ; 00000111111
+
+  ; then the number of As that makes us grow to a third blocks will be six
+  ;         1       2
+  ; 01234567890123456789
+  ; 00000AAAAAA111111
+
+  ; if we have number-of-As, how can we get num-prepended and num-appended?
+
+  ; we should be able to get num-preprended by generating two blocks worth of As
+  ; and then adding As over and over
+  ; until the two blocks after index-of-first-differing-block become equal
+  ; then subtracting 2 * block-length
+  ; like this
+
+  ; start with this many As
+  ;         1       2       3       4
+  ; 0123456789012345678901234567890123456789
+  ; 00000AAAAAAAAAAAAAAAA111111
+  ;
+
+  ; then keep going until you get to this many
+  ;         1       2       3       4
+  ; 0123456789012345678901234567890123456789
+  ; 00000AAAAAAAAAAAAAAAAAAA111111
+
+  ; at this point, the two blocks immediately after index-of-first-differing-block are equal
+
+
+  (rem 122 16)
+
+  (drop -1 [1 2 3])
 
 
 
