@@ -2,7 +2,7 @@
   (:require [clojure.spec.alpha :as s]
             [clojure.string :refer [trim lower-case split]]
             [clojure.java.io :as io]
-            [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST]]
+            [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST INDEXED-VALS collect-one LAST]]
             [ring.util.codec :as codec])
   (:import java.util.Base64
            (javax.crypto Cipher)
@@ -401,24 +401,30 @@
                                                 16)
                                      key)
 
-        ciphertext-1 (encrypt-fn (.getBytes "A"))
-        ciphertext-2 (encrypt-fn (.getBytes "AA"))]
+        ciphertexts (map encrypt-fn
+                         (for [i (range 17)]
+                           (map int (repeat i \A))))
+
+        index-of-first-differing-block (ffirst (select [INDEXED-VALS (collect-one FIRST) LAST
+                                                        #(not= (first %) (second %))]
+                                                       (map vector
+                                                            (partition 16 (first ciphertexts))
+                                                            (partition 16 (second ciphertexts)))))
+
+        ; Now we know that the block at `index-of-first-differing-block` is the first block
+        ; where our actual message begins to appear in the ciphertext.
+        ; Next up: discover the _offset_ within that block at which our plaintext begins.
+
+        ]
     (println (discover-cipher-block-size encrypt-fn))
     (println (does-cipher-use-ecb-mode? encrypt-fn))
-
-
-    ; TODO specter?
-    (ffirst (drop-while (fn [[_ [a b]]]
-                   (= a b))
-                 (map-indexed vector
-                              (map vector
-                                   (partition 16 ciphertext-1)
-                                   (partition 16 ciphertext-2)))))
+    (println (count random-prefix))
+    (println (quot (count random-prefix) 16))
+    index-of-first-differing-block
 
     )
 
-  (map-indexed vector
-               (map vector [1 2] [:a :b]))
+
 
   ; What's harder than challenge #12 about doing this? How would you overcome that obstacle?
   ; The hint is: you're using all the tools you already have; no crazy math is required.
