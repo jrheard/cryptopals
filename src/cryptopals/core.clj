@@ -360,7 +360,8 @@
                                               (nth ciphertext (inc index-of-first-duplicate-block))))))]
 
     (if (= offset-where-message-begins block-size)
-      [index-of-first-duplicate-block 0] [(dec index-of-first-duplicate-block) offset-where-message-begins])))
+      [index-of-first-duplicate-block 0]
+      [(dec index-of-first-duplicate-block) offset-where-message-begins])))
 
 (defn byte-at-a-time-ecb-decrypt
   [encrypt-fn]
@@ -451,5 +452,21 @@
      "uid"   10
      "role"  "user"}))
 
+(defn enforce-valid-padding
+  ; "Write a function that takes a plaintext, determines if it has valid PKCS#7 padding,
+  ; and strips the padding off.
+  ; If you are writing in a language with exceptions, like Python or Ruby, make your
+  ; function throw an exception on bad padding."
+  [bytes block-size]
+  (let [padding-byte (last bytes)]
+    (assert (= (rem (count bytes) block-size) 0))
+    (assert (<= 1 padding-byte block-size))
+    (assert (apply = (take-last padding-byte bytes))))
+  (pkcs7-depad bytes))
+
 (comment
+  (enforce-valid-padding (concat (map int "ICE ICE BABY")
+                                 [1 2 3 4])
+                         16
+                         )
   )
