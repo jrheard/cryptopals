@@ -274,7 +274,7 @@
                                                      xor-block)))
                                   []
                                   (map vector ciphertext-blocks xor-blocks)))]
-    (pkcs7-depad decryption)))
+    decryption))
 
 (defn generate-aes-key []
   ; "Write a function to generate a random AES key; that's just 16 random bytes."
@@ -452,16 +452,20 @@
      "uid"   10
      "role"  "user"}))
 
+(defn is-padding-valid?
+  [bytes block-size]
+  (let [padding-byte (last bytes)]
+    (and (= (rem (count bytes) block-size) 0)
+         (<= 1 padding-byte block-size)
+         (apply = (take-last padding-byte bytes)))))
+
 (defn enforce-valid-padding
   ; "Write a function that takes a plaintext, determines if it has valid PKCS#7 padding,
   ; and strips the padding off.
   ; If you are writing in a language with exceptions, like Python or Ruby, make your
   ; function throw an exception on bad padding."
   [bytes block-size]
-  (let [padding-byte (last bytes)]
-    (assert (= (rem (count bytes) block-size) 0))
-    (assert (<= 1 padding-byte block-size))
-    (assert (apply = (take-last padding-byte bytes))))
+  (assert (is-padding-valid? bytes block-size))
   (pkcs7-depad bytes))
 
 (def ESCAPE-CHARACTERS-2-16
@@ -496,7 +500,29 @@
 
     (boolean (re-seq #";admin=true;" plaintext))))
 
+(defn random-string-3-17
+  ; "The first function should select at random one of the following 10 strings."
+  []
+  (rand-nth (split "MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=\nMDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=\nMDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==\nMDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg==\nMDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl\nMDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA==\nMDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw==\nMDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8=\nMDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=\nMDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93"
+                   #"\n")))
+
+(defn verify-ciphertext-3-17
+  ; "The second function should consume the ciphertext produced by the first function,
+  ; decrypt it, check its padding, and return true or false depending on whether the padding is valid."
+  [ciphertext key iv]
+  (is-padding-valid? (aes-cbc-decrypt ciphertext key iv) 16))
+
 (comment
+  (let [key (generate-aes-key)
+        string (random-string-3-17)
+        iv (byte-array (repeat 16 0))
+        ciphertext (aes-cbc-encrypt (.getBytes string) key iv)]
+
+    (verify-ciphertext-3-17 ciphertext key iv)
+
+    )
+
+  (random-string-3-17)
 
   )
 

@@ -67,9 +67,9 @@
 
 (deftest set-2-challenge-10
   (let [input (parse-base64-file "set_2_challenge_10.txt")]
-    (is (= (bytes->str (aes-cbc-decrypt input
-                                        (.getBytes "YELLOW SUBMARINE")
-                                        (byte-array (repeat 16 0))))
+    (is (= (bytes->str (pkcs7-depad (aes-cbc-decrypt input
+                                                     (.getBytes "YELLOW SUBMARINE")
+                                                     (byte-array (repeat 16 0)))))
            FUNKY-MUSIC))))
 
 (deftest set-2-challenge-11
@@ -181,7 +181,7 @@
     (is (thrown? AssertionError (enforce "ICE ICE BABY" [1 2 3 4])))))
 
 (deftest set-2-challenge-16
-  ; If you've written the first function properly, it should not be possible to provide user
+  ; "If you've written the first function properly, it should not be possible to provide user
   ; input to it that will generate the string the second function is looking for.
   ; We'll have to break the crypto to do that.
 
@@ -189,7 +189,7 @@
 
   ; You're relying on the fact that in CBC mode, a 1-bit error in a ciphertext block:
   ; * Completely scrambles the block the error occurs in
-  ; * Produces the identical 1-bit error(/edit) in the next ciphertext block.
+  ; * Produces the identical 1-bit error(/edit) in the next ciphertext block."
 
   (let [key (generate-aes-key)
         iv (byte-array (repeat 16 0))
