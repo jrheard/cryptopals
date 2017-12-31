@@ -179,3 +179,30 @@
 
     (is (thrown? AssertionError (enforce "ICE ICE BABY" [5 5 5 5 5])))
     (is (thrown? AssertionError (enforce "ICE ICE BABY" [1 2 3 4])))))
+
+(deftest set-2-challenge-16
+  ; If you've written the first function properly, it should not be possible to provide user
+  ; input to it that will generate the string the second function is looking for.
+  ; We'll have to break the crypto to do that.
+
+  ; Instead, modify the ciphertext (without knowledge of the AES key) to accomplish this.
+
+  ; You're relying on the fact that in CBC mode, a 1-bit error in a ciphertext block:
+  ; * Completely scrambles the block the error occurs in
+  ; * Produces the identical 1-bit error(/edit) in the next ciphertext block.
+
+  (let [key (generate-aes-key)
+        iv (byte-array (repeat 16 0))
+        ciphertext (encrypt-comment-userdata-string (apply str (repeat 32 \A))
+                                                    key iv)
+        attack-mask (map bit-xor
+                         (.getBytes ";admin=true;")
+                         (.getBytes "AAAAAAAAAAAA"))
+
+        edited-ciphertext (concat (take 32 ciphertext)
+                                  (map bit-xor attack-mask (take 12 (drop 32 ciphertext)))
+                                  (drop 44 ciphertext))]
+
+    (is-comment-by-admin? edited-ciphertext
+                          key
+                          iv)))

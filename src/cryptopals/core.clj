@@ -4,7 +4,6 @@
             [clojure.string :refer [trim lower-case split]]
             [clojure.java.io :as io]
             [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST INDEXED-VALS collect-one LAST]]
-            [hickory.core :refer [as-hickory parse-fragment]]
             [ring.util.codec :as codec])
   (:import java.util.Base64
            (javax.crypto Cipher)
@@ -376,10 +375,9 @@
            ; "Knowing the block size, craft an input block that is exactly 1 byte short
            ; (for instance, if the block size is 8 bytes, make "AAAAAAA"). Think about
            ; what the oracle function is going to put in that last byte position."
-           ;
-           ; We also add enough As to make sure that our message starts at the beginning of
-           ; a fresh block. See 2.14.
            too-short-input (vec (repeat (+ (dec cipher-block-size)
+                                           ; We also add enough As to make sure that our message
+                                           ; starts at the beginning of a fresh block. See 2.14.
                                            (if (> message-start-offset 0)
                                              (- cipher-block-size message-start-offset)
                                              0))
@@ -470,17 +468,6 @@
   {\; "&#59;"
    \& "&#38;"})
 
-(defn escape-2-16
-  [string]
-  (clojure.string/escape string ESCAPE-CHARACTERS-2-16))
-
-(defn unescape-2-16
-  [string]
-  (-> string
-      parse-fragment
-      first
-      as-hickory))
-
 (defn encrypt-comment-userdata-string
   ; "The first function should take an arbitrary input string, prepend the string:
   ; "comment1=cooking%20MCs;userdata="
@@ -489,7 +476,7 @@
   [userdata-string key iv]
   ; "The function should quote out the ";" and "=" characters."
   (let [message (str "comment1=cooking%20MCs;userdata="
-                     (escape-2-16 userdata-string)
+                     (clojure.string/escape userdata-string ESCAPE-CHARACTERS-2-16)
                      ";comment2=%20like%20a%20pound%20of%20bacon")]
     ; "The function should then pad out the input to the 16-byte AES block length
     ; and encrypt it under the random AES key."
@@ -501,32 +488,16 @@
   ; "The second function should decrypt the string and look for the characters ";admin=true;"
   ; Return true or false based on whether the string exists."
   [ciphertext-bytes key iv]
-  (let [plaintext (-> ciphertext-bytes
-                      (aes-cbc-decrypt key iv)
-                      (enforce-valid-padding 16)
-                      bytes->str)]
+  (let [plaintext (as-> ciphertext-bytes $
+                        (aes-cbc-decrypt $ key iv)
+                        (enforce-valid-padding $ 16)
+                        (map #(bit-and % 0xff) $)
+                        (bytes->str $))]
+
     (boolean (re-seq #";admin=true;" plaintext))))
 
 (comment
 
-  (is-comment-by-admin?)
-
-  (map-invert ESCAPE-CHARACTERS-2-16)
-
-  (clojure.string/replace-by)
-
-  (let [key (generate-aes-key)
-        iv (byte-array (repeat 16 0))]
-    (is-comment-by-admin? (encrypt-comment-userdata-string ";admin=true;" key iv)
-                          key
-                          iv)
-    )
-
-
-  (escape-2-16 ";admin=true;")
-  (unescape-2-16 (escape-2-16 ";admin=true;"))
-
-  (re-pattern ";")
   )
 
 
