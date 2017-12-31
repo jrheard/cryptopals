@@ -171,17 +171,11 @@
            "Rollin' in my 5.0\nWith my rag-top down so my hair can blow\nThe girlies on standby waving just to say hi\nDid you stop? No, I just drove by\n"))))
 
 (deftest set-2-challenge-15
-  (is (= (bytes->str (enforce-valid-padding (concat (map int "ICE ICE BABY")
-                                                    [4 4 4 4])
-                                            16))
-         "ICE ICE BABY"))
+  (let [enforce #(enforce-valid-padding (concat (map int %1)
+                                                %2)
+                                        16)]
+    (is (= (bytes->str (enforce "ICE ICE BABY" [4 4 4 4]))
+           "ICE ICE BABY"))
 
-  (is (thrown? AssertionError
-               (enforce-valid-padding (concat (map int "ICE ICE BABY")
-                                              [5 5 5 5 5])
-                                      16)))
-
-  (is (thrown? AssertionError
-               (enforce-valid-padding (concat (map int "ICE ICE BABY")
-                                              [1 2 3 4])
-                                      16))))
+    (is (thrown? AssertionError (enforce "ICE ICE BABY" [5 5 5 5 5])))
+    (is (thrown? AssertionError (enforce "ICE ICE BABY" [1 2 3 4])))))

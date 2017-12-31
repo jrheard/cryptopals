@@ -7,6 +7,7 @@
 
                  [com.rpl/specter "1.0.5"]
                  [ring/ring-core "1.6.3"]
+                 [hickory "0.7.1"]
 
                  [org.clojure/spec.alpha "0.1.143"]
                  [orchestra "2017.11.12-1"]]

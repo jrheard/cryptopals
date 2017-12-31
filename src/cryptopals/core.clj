@@ -1,8 +1,10 @@
 (ns cryptopals.core
-  (:require [clojure.spec.alpha :as s]
+  (:require [clojure.set :refer [map-invert]]
+            [clojure.spec.alpha :as s]
             [clojure.string :refer [trim lower-case split]]
             [clojure.java.io :as io]
             [com.rpl.specter :refer [select transform ALL MAP-VALS MAP-KEYS FIRST INDEXED-VALS collect-one LAST]]
+            [hickory.core :refer [as-hickory parse-fragment]]
             [ring.util.codec :as codec])
   (:import java.util.Base64
            (javax.crypto Cipher)
@@ -262,8 +264,8 @@
 
 (defn aes-cbc-decrypt
   [ciphertext-bytes key-bytes iv-bytes]
-  (let [partitioned (partition 16 ciphertext-bytes)
-        xor-blocks (concat [iv-bytes] (drop-last 1 partitioned))
+  (let [ciphertext-blocks (partition 16 ciphertext-bytes)
+        xor-blocks (concat [iv-bytes] (drop-last 1 ciphertext-blocks))
         decryption (apply concat
                           (reduce (fn [plaintext-bytes [block xor-block]]
                                     (conj plaintext-bytes
@@ -272,16 +274,16 @@
                                           (fixed-xor (aes-ecb-decrypt block key-bytes)
                                                      xor-block)))
                                   []
-                                  (map vector partitioned xor-blocks)))]
+                                  (map vector ciphertext-blocks xor-blocks)))]
     (pkcs7-depad decryption)))
 
 (defn generate-aes-key []
   ; "Write a function to generate a random AES key; that's just 16 random bytes."
   (byte-array (take 16 (repeatedly #(rand-int 256)))))
 
-; "Write a function that encrypts data under an unknown key --- that is,
-; a function that generates a random key and encrypts under it."
 (defn aes-encrypt-with-random-key-and-padding
+  ; "Write a function that encrypts data under an unknown key --- that is,
+  ; a function that generates a random key and encrypts under it."
   [bytes]
   (let [key (generate-aes-key)
         num-chars-to-prepend (+ 5 (rand-int 6))
@@ -464,9 +466,69 @@
     (assert (apply = (take-last padding-byte bytes))))
   (pkcs7-depad bytes))
 
+(def ESCAPE-CHARACTERS-2-16
+  {\; "&#59;"
+   \& "&#38;"})
+
+(defn escape-2-16
+  [string]
+  (clojure.string/escape string ESCAPE-CHARACTERS-2-16))
+
+(defn unescape-2-16
+  [string]
+  (-> string
+      parse-fragment
+      first
+      as-hickory))
+
+(defn encrypt-comment-userdata-string
+  ; "The first function should take an arbitrary input string, prepend the string:
+  ; "comment1=cooking%20MCs;userdata="
+  ; .. and append the string:
+  ; ";comment2=%20like%20a%20pound%20of%20bacon"
+  [userdata-string key iv]
+  ; "The function should quote out the ";" and "=" characters."
+  (let [message (str "comment1=cooking%20MCs;userdata="
+                     (escape-2-16 userdata-string)
+                     ";comment2=%20like%20a%20pound%20of%20bacon")]
+    ; "The function should then pad out the input to the 16-byte AES block length
+    ; and encrypt it under the random AES key."
+    (aes-cbc-encrypt (pkcs7-pad (.getBytes message) 16)
+                     key
+                     iv)))
+
+(defn is-comment-by-admin?
+  ; "The second function should decrypt the string and look for the characters ";admin=true;"
+  ; Return true or false based on whether the string exists."
+  [ciphertext-bytes key iv]
+  (let [plaintext (-> ciphertext-bytes
+                      (aes-cbc-decrypt key iv)
+                      (enforce-valid-padding 16)
+                      bytes->str)]
+    (boolean (re-seq #";admin=true;" plaintext))))
+
 (comment
-  (enforce-valid-padding (concat (map int "ICE ICE BABY")
-                                 [1 2 3 4])
-                         16
-                         )
+
+  (is-comment-by-admin?)
+
+  (map-invert ESCAPE-CHARACTERS-2-16)
+
+  (clojure.string/replace-by)
+
+  (let [key (generate-aes-key)
+        iv (byte-array (repeat 16 0))]
+    (is-comment-by-admin? (encrypt-comment-userdata-string ";admin=true;" key iv)
+                          key
+                          iv)
+    )
+
+
+  (escape-2-16 ";admin=true;")
+  (unescape-2-16 (escape-2-16 ";admin=true;"))
+
+  (re-pattern ";")
   )
+
+
+
+
