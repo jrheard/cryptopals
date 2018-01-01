@@ -206,3 +206,11 @@
     (is-comment-by-admin? edited-ciphertext
                           key
                           iv)))
+
+(deftest set-3-challenge-17
+  (let [key (generate-aes-key)
+        [ciphertext plaintext iv] (generate-ciphertext-3-17 key)]
+
+    (= (map int plaintext)
+       (pkcs7-depad
+         (perform-cbc-padding-oracle-attack ciphertext iv #(verify-ciphertext-3-17 % key iv))))))

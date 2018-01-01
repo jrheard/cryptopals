@@ -512,6 +512,7 @@
   (let [iv (generate-aes-key)
         plaintext (.getBytes (random-string-3-17))]
     [(aes-cbc-encrypt plaintext key iv)
+     plaintext
      iv]))
 
 (defn verify-ciphertext-3-17
@@ -519,16 +520,6 @@
   ; decrypt it, check its padding, and return true or false depending on whether the padding is valid."
   [ciphertext key iv]
   (is-padding-valid? (aes-cbc-decrypt ciphertext key iv) 16))
-
-(defn set-values-from-index
-  [xs starting-index value]
-  (if (< starting-index (dec (count xs)))
-    (apply assoc
-           xs
-           (flatten
-             (for [i (range starting-index (count xs))]
-               [i value])))
-    xs))
 
 (defn assemble-tampered-cbc-padding-oracle-prev-block
   [prev-block index-being-decoded decoded-bytes-for-curr-block]
@@ -545,83 +536,62 @@
                      (nth decoded-bytes-for-curr-block (- i (inc index-being-decoded)))
                      (- (count prev-block) index-being-decoded))))))))
 
+(defn perform-cbc-padding-oracle-attack
+  ; See https://github.com/mpgn/Padding-oracle-attack
+  ; and https://en.wikipedia.org/wiki/Padding_oracle_attack
+  ; for explanations of what's going on here.
+  [ciphertext iv oracle-fn]
+  (loop [ciphertext-blocks (concat [(vec iv)]
+                                   (map vec (partition 16 ciphertext)))
+         block (last ciphertext-blocks)
+         prev-block (last (butlast ciphertext-blocks))
+         index-being-decoded 15
+         decoded-bytes-for-block '()
+         decoded-blocks '()]
+
+    (if (not (seq prev-block))
+      ; `block` is the IV, and so there's nothing else left to decode - we're done!
+      (apply concat decoded-blocks)
+
+      (let [correct-padding-byte-for-index (- 16 index-being-decoded)
+
+            ; Again, see https://en.wikipedia.org/wiki/Padding_oracle_attack#Example_of_the_attack_on_CBC_encryption
+            ; for an explanation of this code.
+            base-tampered-prev-block (assemble-tampered-cbc-padding-oracle-prev-block
+                                       prev-block
+                                       index-being-decoded
+                                       decoded-bytes-for-block)
+
+            attempts (for [i (range 256)]
+                       (let [tampered-prev-block (assoc base-tampered-prev-block
+                                                   index-being-decoded
+                                                   (bit-xor (nth base-tampered-prev-block index-being-decoded)
+                                                            i
+                                                            correct-padding-byte-for-index))]
+                         (oracle-fn (concat tampered-prev-block block))))
+
+            decoded-byte (first (last (filter #(true? (second %))
+                                              (map-indexed vector attempts))))]
+
+        (if (= index-being-decoded 0)
+          ; We're done with this block; save our progress and begin working on the previous block.
+          (recur (butlast ciphertext-blocks)
+                 prev-block
+                 (last (butlast (butlast ciphertext-blocks)))
+                 (dec (count block))
+                 '()
+                 (conj decoded-blocks
+                       (conj decoded-bytes-for-block decoded-byte)))
+
+          ; Record the decoded byte in decoded-bytes-for-block and continue decoding this block.
+          (recur ciphertext-blocks
+                 block
+                 prev-block
+                 (dec index-being-decoded)
+                 (conj decoded-bytes-for-block decoded-byte)
+                 decoded-blocks))))))
+
 (comment
-
-  (let [key (generate-aes-key)
-        [ciphertext iv] (generate-ciphertext-3-17 key)]
-
-    (println "THERE ARE THIS MANY CIPHERTEXT BLOCKS" (count (partition 16 ciphertext)))
-
-    (loop [ciphertext-blocks (concat [(vec iv)] (map vec (partition 16 ciphertext)))
-           block (last ciphertext-blocks)
-           prev-block (last (butlast ciphertext-blocks))
-           index-being-decoded 15
-           decoded-bytes-for-block '()
-           decoded-blocks '()]
-      (if (= block iv)
-        (apply concat decoded-blocks)
-
-        (do
-          (println "SUP")
-          (println index-being-decoded decoded-bytes-for-block (count decoded-blocks))
-
-          (let [correct-padding-byte-for-index (- 16 index-being-decoded)
-
-                base-tampered-prev-block (assemble-tampered-cbc-padding-oracle-prev-block
-                                           prev-block
-                                           index-being-decoded
-                                           decoded-bytes-for-block)
-
-                attempts (for [i (range 256)]
-                           (let [tampered-prev-block (assoc base-tampered-prev-block
-                                                       index-being-decoded
-                                                       (bit-xor (nth base-tampered-prev-block index-being-decoded)
-                                                                i
-                                                                correct-padding-byte-for-index))]
-                             (verify-ciphertext-3-17 (concat tampered-prev-block block) key iv)))
-
-                ; XXXXX FIGURE OUT WHY THIS LAST IS NECESSARY
-                decoded-byte (first (last (filter #(true? (second %))
-                                                  (map-indexed vector attempts))))]
-
-            (if (= index-being-decoded 0)
-              (recur (butlast ciphertext-blocks)
-                     prev-block
-                     (last (butlast (butlast ciphertext-blocks)))
-                     15
-                     '()
-                     (conj decoded-blocks
-                           (conj decoded-bytes-for-block decoded-byte)))
-
-              (recur ciphertext-blocks
-                     block
-                     prev-block
-                     (dec index-being-decoded)
-                     (conj decoded-bytes-for-block decoded-byte)
-                     decoded-blocks)))))))
-
-  (bit-xor 14 1 1)
-
-  ; the readme in https://github.com/mpgn/Padding-oracle-attack is great
-
-  ; It turns out that it's possible to decrypt the ciphertexts provided by the first function.
-  ; The decryption here depends on a side-channel leak by the decryption function.
-  ; The leak is the error message that the padding is valid or not.
-  ; You can find 100 web pages on how this attack works, so I won't re-explain it. What I'll say is this:
-
-  ; The fundamental insight behind this attack is that the byte 01h is valid padding,
-  ; and occur in 1/256 trials of "randomized" plaintexts produced by decrypting a tampered ciphertext.
-  ; 02h in isolation is not valid padding.
-  ; 02h 02h is valid padding, but is much less likely to occur randomly than 01h.
-  ; 03h 03h 03h is even less likely.
-
-  ; So you can assume that if you corrupt a decryption AND it had valid padding,
-  ; you know what that padding byte is.
-
-  ; It is easy to get tripped up on the fact that CBC plaintexts are "padded". Padding
-  ; oracles have nothing to do with the actual padding on a CBC plaintext.
-  ; It's an attack that targets a specific bit of code that handles decryption.
-  ; You can mount a padding oracle on any CBC block, whether it's padded or not.
 
   )
 
