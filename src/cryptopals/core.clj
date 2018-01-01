@@ -505,7 +505,7 @@
   []
   ; XXX rand-nth
   (second (split "MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=\nMDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=\nMDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==\nMDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg==\nMDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl\nMDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA==\nMDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw==\nMDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8=\nMDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=\nMDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93"
-                #"\n")))
+                 #"\n")))
 
 (defn generate-ciphertext-3-17
   [key]
@@ -532,6 +532,7 @@
 
 (defn assemble-tampered-cbc-padding-oracle-prev-block
   [prev-block index-being-decoded decoded-bytes-for-curr-block]
+  ; TODO - specter transform?
   (if (= index-being-decoded (dec (count prev-block)))
     prev-block
 
@@ -545,18 +546,11 @@
                      (- (count prev-block) index-being-decoded))))))))
 
 (comment
-  (set-values-from-index [0 0 0 0 0] 2 3)
-
-  ; wait, why are they all 16
-
-
-
-  (conj '[1 2 3] 4)
-  (vec '(1 2 30))
-  (conj '(1 2) 3)
 
   (let [key (generate-aes-key)
         [ciphertext iv] (generate-ciphertext-3-17 key)]
+
+    (println "THERE ARE THIS MANY CIPHERTEXT BLOCKS" (count (partition 16 ciphertext)))
 
     (loop [ciphertext-blocks (concat [(vec iv)] (map vec (partition 16 ciphertext)))
            block (last ciphertext-blocks)
@@ -564,38 +558,47 @@
            index-being-decoded 15
            decoded-bytes-for-block '()
            decoded-blocks '()]
+      (if (= block iv)
+        (apply concat decoded-blocks)
 
-      (println "SUP")
-      (println index-being-decoded decoded-bytes-for-block)
+        (do
+          (println "SUP")
+          (println index-being-decoded decoded-bytes-for-block (count decoded-blocks))
 
-      (let [correct-padding-byte-for-index (- 16 index-being-decoded)
+          (let [correct-padding-byte-for-index (- 16 index-being-decoded)
 
-            base-tampered-prev-block (assemble-tampered-cbc-padding-oracle-prev-block
-                                       prev-block
-                                       index-being-decoded
-                                       decoded-bytes-for-block)
+                base-tampered-prev-block (assemble-tampered-cbc-padding-oracle-prev-block
+                                           prev-block
+                                           index-being-decoded
+                                           decoded-bytes-for-block)
 
-            attempts (for [i (range 256)]
-                       (let [tampered-prev-block (assoc base-tampered-prev-block
-                                                   index-being-decoded
-                                                   (bit-xor (nth base-tampered-prev-block index-being-decoded)
-                                                            i
-                                                            correct-padding-byte-for-index))]
-                         (and (not= i correct-padding-byte-for-index)
-                              (verify-ciphertext-3-17 (concat tampered-prev-block block) key iv))))
+                attempts (for [i (range 256)]
+                           (let [tampered-prev-block (assoc base-tampered-prev-block
+                                                       index-being-decoded
+                                                       (bit-xor (nth base-tampered-prev-block index-being-decoded)
+                                                                i
+                                                                correct-padding-byte-for-index))]
+                             (verify-ciphertext-3-17 (concat tampered-prev-block block) key iv)))
 
-            decoded-byte (ffirst (filter #(true? (second %))
-                                         (map-indexed vector attempts)))]
+                ; XXXXX FIGURE OUT WHY THIS LAST IS NECESSARY
+                decoded-byte (first (last (filter #(true? (second %))
+                                                  (map-indexed vector attempts))))]
 
-        (if (= index-being-decoded 0)
-          (conj decoded-bytes-for-block decoded-byte)
+            (if (= index-being-decoded 0)
+              (recur (butlast ciphertext-blocks)
+                     prev-block
+                     (last (butlast (butlast ciphertext-blocks)))
+                     15
+                     '()
+                     (conj decoded-blocks
+                           (conj decoded-bytes-for-block decoded-byte)))
 
-          (recur ciphertext-blocks
-                 block
-                 prev-block
-                 (dec index-being-decoded)
-                 (conj decoded-bytes-for-block decoded-byte)
-                 decoded-blocks)))))
+              (recur ciphertext-blocks
+                     block
+                     prev-block
+                     (dec index-being-decoded)
+                     (conj decoded-bytes-for-block decoded-byte)
+                     decoded-blocks)))))))
 
   (bit-xor 14 1 1)
 
