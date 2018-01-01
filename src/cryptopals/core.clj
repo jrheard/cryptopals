@@ -503,8 +503,16 @@
 (defn random-string-3-17
   ; "The first function should select at random one of the following 10 strings."
   []
-  (rand-nth (split "MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=\nMDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=\nMDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==\nMDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg==\nMDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl\nMDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA==\nMDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw==\nMDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8=\nMDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=\nMDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93"
-                   #"\n")))
+  ; XXX rand-nth
+  (second (split "MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=\nMDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=\nMDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==\nMDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg==\nMDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl\nMDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA==\nMDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw==\nMDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8=\nMDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=\nMDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93"
+                #"\n")))
+
+(defn generate-ciphertext-3-17
+  [key]
+  (let [iv (generate-aes-key)
+        plaintext (.getBytes (random-string-3-17))]
+    [(aes-cbc-encrypt plaintext key iv)
+     iv]))
 
 (defn verify-ciphertext-3-17
   ; "The second function should consume the ciphertext produced by the first function,
@@ -512,17 +520,105 @@
   [ciphertext key iv]
   (is-padding-valid? (aes-cbc-decrypt ciphertext key iv) 16))
 
+(defn set-values-from-index
+  [xs starting-index value]
+  (if (< starting-index (dec (count xs)))
+    (apply assoc
+           xs
+           (flatten
+             (for [i (range starting-index (count xs))]
+               [i value])))
+    xs))
+
+(defn assemble-tampered-cbc-padding-oracle-prev-block
+  [prev-block index-being-decoded decoded-bytes-for-curr-block]
+  (if (= index-being-decoded (dec (count prev-block)))
+    prev-block
+
+    (let [decoded-bytes-for-curr-block (vec decoded-bytes-for-curr-block)]
+      (vec
+        (concat
+          (subvec prev-block 0 (inc index-being-decoded))
+          (for [i (range (inc index-being-decoded) (count prev-block))]
+            (bit-xor (nth prev-block i)
+                     (nth decoded-bytes-for-curr-block (- i (inc index-being-decoded)))
+                     (- (count prev-block) index-being-decoded))))))))
+
 (comment
+  (set-values-from-index [0 0 0 0 0] 2 3)
+
+  ; wait, why are they all 16
+
+
+
+  (conj '[1 2 3] 4)
+  (vec '(1 2 30))
+  (conj '(1 2) 3)
+
   (let [key (generate-aes-key)
-        string (random-string-3-17)
-        iv (byte-array (repeat 16 0))
-        ciphertext (aes-cbc-encrypt (.getBytes string) key iv)]
+        [ciphertext iv] (generate-ciphertext-3-17 key)]
 
-    (verify-ciphertext-3-17 ciphertext key iv)
+    (loop [ciphertext-blocks (concat [(vec iv)] (map vec (partition 16 ciphertext)))
+           block (last ciphertext-blocks)
+           prev-block (last (butlast ciphertext-blocks))
+           index-being-decoded 15
+           decoded-bytes-for-block '()
+           decoded-blocks '()]
 
-    )
+      (println "SUP")
+      (println index-being-decoded decoded-bytes-for-block)
 
-  (random-string-3-17)
+      (let [correct-padding-byte-for-index (- 16 index-being-decoded)
+
+            base-tampered-prev-block (assemble-tampered-cbc-padding-oracle-prev-block
+                                       prev-block
+                                       index-being-decoded
+                                       decoded-bytes-for-block)
+
+            attempts (for [i (range 256)]
+                       (let [tampered-prev-block (assoc base-tampered-prev-block
+                                                   index-being-decoded
+                                                   (bit-xor (nth base-tampered-prev-block index-being-decoded)
+                                                            i
+                                                            correct-padding-byte-for-index))]
+                         (and (not= i correct-padding-byte-for-index)
+                              (verify-ciphertext-3-17 (concat tampered-prev-block block) key iv))))
+
+            decoded-byte (ffirst (filter #(true? (second %))
+                                         (map-indexed vector attempts)))]
+
+        (if (= index-being-decoded 0)
+          (conj decoded-bytes-for-block decoded-byte)
+
+          (recur ciphertext-blocks
+                 block
+                 prev-block
+                 (dec index-being-decoded)
+                 (conj decoded-bytes-for-block decoded-byte)
+                 decoded-blocks)))))
+
+  (bit-xor 14 1 1)
+
+  ; the readme in https://github.com/mpgn/Padding-oracle-attack is great
+
+  ; It turns out that it's possible to decrypt the ciphertexts provided by the first function.
+  ; The decryption here depends on a side-channel leak by the decryption function.
+  ; The leak is the error message that the padding is valid or not.
+  ; You can find 100 web pages on how this attack works, so I won't re-explain it. What I'll say is this:
+
+  ; The fundamental insight behind this attack is that the byte 01h is valid padding,
+  ; and occur in 1/256 trials of "randomized" plaintexts produced by decrypting a tampered ciphertext.
+  ; 02h in isolation is not valid padding.
+  ; 02h 02h is valid padding, but is much less likely to occur randomly than 01h.
+  ; 03h 03h 03h is even less likely.
+
+  ; So you can assume that if you corrupt a decryption AND it had valid padding,
+  ; you know what that padding byte is.
+
+  ; It is easy to get tripped up on the fact that CBC plaintexts are "padded". Padding
+  ; oracles have nothing to do with the actual padding on a CBC plaintext.
+  ; It's an attack that targets a specific bit of code that handles decryption.
+  ; You can mount a padding oracle on any CBC block, whether it's padded or not.
 
   )
 
