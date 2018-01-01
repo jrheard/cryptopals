@@ -523,18 +523,18 @@
 
 (defn assemble-tampered-cbc-padding-oracle-prev-block
   [prev-block index-being-decoded decoded-bytes-for-curr-block]
-  ; TODO - specter transform?
   (if (= index-being-decoded (dec (count prev-block)))
     prev-block
 
     (let [decoded-bytes-for-curr-block (vec decoded-bytes-for-curr-block)]
-      (vec
-        (concat
-          (subvec prev-block 0 (inc index-being-decoded))
-          (for [i (range (inc index-being-decoded) (count prev-block))]
-            (bit-xor (nth prev-block i)
-                     (nth decoded-bytes-for-curr-block (- i (inc index-being-decoded)))
-                     (- (count prev-block) index-being-decoded))))))))
+
+      (transform [INDEXED-VALS #(> (first %) index-being-decoded) (collect-one FIRST) LAST]
+                 (fn [index val]
+                   (bit-xor val
+                            (nth decoded-bytes-for-curr-block
+                                 (- index (inc index-being-decoded)))
+                            (- (count prev-block) index-being-decoded)))
+                 prev-block))))
 
 (defn perform-cbc-padding-oracle-attack
   ; See https://github.com/mpgn/Padding-oracle-attack
