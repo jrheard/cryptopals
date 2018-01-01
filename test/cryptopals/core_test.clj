@@ -209,7 +209,9 @@
 
 (deftest set-3-challenge-17
   (let [key (generate-aes-key)
-        [ciphertext plaintext iv] (generate-ciphertext-3-17 key)]
+        iv (generate-aes-key)
+        plaintext (.getBytes (random-string-3-17))
+        ciphertext (aes-cbc-encrypt plaintext key iv)]
 
     (= (map int plaintext)
        (pkcs7-depad
