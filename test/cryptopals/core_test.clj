@@ -216,3 +216,10 @@
     (= (map int plaintext)
        (pkcs7-depad
          (perform-cbc-padding-oracle-attack ciphertext iv #(verify-ciphertext-3-17 % key iv))))))
+
+(deftest set-3-challenge-18
+  (is (= (bytes->str (aes-ctr-mode-encrypt
+                       (base64->bytes "L77na/nrFsKvynd6HzOoG7GHTLXsTVu9qvY/2syLXzhPweyyMTJULu/6/kXX0KSvoOLSFQ==")
+                       (.getBytes "YELLOW SUBMARINE")
+                       (repeat 8 0)))
+         "Yo, VIP Let's kick it Ice, Ice, baby Ice, Ice, baby ")))

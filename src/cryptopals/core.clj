@@ -7,7 +7,8 @@
             [ring.util.codec :as codec])
   (:import java.util.Base64
            (javax.crypto Cipher)
-           (javax.crypto.spec SecretKeySpec)))
+           (javax.crypto.spec SecretKeySpec)
+           java.nio.ByteBuffer))
 
 ;;;;;;;;;;;;
 ;; Utilities
@@ -504,7 +505,7 @@
   ; "The first function should select at random one of the following 10 strings."
   []
   (rand-nth (split "MDAwMDAwTm93IHRoYXQgdGhlIHBhcnR5IGlzIGp1bXBpbmc=\nMDAwMDAxV2l0aCB0aGUgYmFzcyBraWNrZWQgaW4gYW5kIHRoZSBWZWdhJ3MgYXJlIHB1bXBpbic=\nMDAwMDAyUXVpY2sgdG8gdGhlIHBvaW50LCB0byB0aGUgcG9pbnQsIG5vIGZha2luZw==\nMDAwMDAzQ29va2luZyBNQydzIGxpa2UgYSBwb3VuZCBvZiBiYWNvbg==\nMDAwMDA0QnVybmluZyAnZW0sIGlmIHlvdSBhaW4ndCBxdWljayBhbmQgbmltYmxl\nMDAwMDA1SSBnbyBjcmF6eSB3aGVuIEkgaGVhciBhIGN5bWJhbA==\nMDAwMDA2QW5kIGEgaGlnaCBoYXQgd2l0aCBhIHNvdXBlZCB1cCB0ZW1wbw==\nMDAwMDA3SSdtIG9uIGEgcm9sbCwgaXQncyB0aW1lIHRvIGdvIHNvbG8=\nMDAwMDA4b2xsaW4nIGluIG15IGZpdmUgcG9pbnQgb2g=\nMDAwMDA5aXRoIG15IHJhZy10b3AgZG93biBzbyBteSBoYWlyIGNhbiBibG93"
-                 #"\n")))
+                   #"\n")))
 
 (defn verify-ciphertext-3-17
   ; "The second function should consume the ciphertext produced by the first function,
@@ -582,10 +583,25 @@
                  (conj decoded-bytes-for-block decoded-byte)
                  decoded-blocks))))))
 
+(defn ctr-mode-counter-to-little-endian-bytes
+  [counter]
+  (reverse (map int (.array (.putLong (ByteBuffer/allocate 8) counter)))))
+
+(defn aes-ctr-mode-encrypt
+  ; Implements CTR mode.
+  ; See https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Counter_(CTR) .
+  [plaintext-bytes key nonce]
+  (apply concat
+         (for [[index plaintext-block] (map-indexed vector
+                                                    (partition-all 16 plaintext-bytes))]
+           (let [keystream-block (aes-ecb-encrypt
+                                   ; "64 bit unsigned little endian nonce"
+                                   (byte-array (concat (reverse nonce)
+                                                       ; "64 bit little endian block count"
+                                                       (ctr-mode-counter-to-little-endian-bytes index)))
+                                   key)]
+             (map bit-xor plaintext-block keystream-block)))))
+
 (comment
 
   )
-
-
-
-
