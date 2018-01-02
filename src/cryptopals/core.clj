@@ -596,7 +596,7 @@
                                                     (partition-all 16 plaintext-bytes))]
            (let [keystream-block (aes-ecb-encrypt
                                    ; "64 bit unsigned little endian nonce"
-                                   (byte-array (concat (reverse nonce)
+                                   (byte-array (concat nonce
                                                        ; "64 bit little endian block count"
                                                        (ctr-mode-counter-to-little-endian-bytes index)))
                                    key)]

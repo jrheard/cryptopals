@@ -203,9 +203,9 @@
                                   (map bit-xor attack-mask (take 12 (drop 32 ciphertext)))
                                   (drop 44 ciphertext))]
 
-    (is-comment-by-admin? edited-ciphertext
-                          key
-                          iv)))
+    (is (true? (is-comment-by-admin? edited-ciphertext
+                                     key
+                                     iv)))))
 
 (deftest set-3-challenge-17
   (let [key (generate-aes-key)
@@ -213,9 +213,9 @@
         plaintext (.getBytes (random-string-3-17))
         ciphertext (aes-cbc-encrypt plaintext key iv)]
 
-    (= (map int plaintext)
-       (pkcs7-depad
-         (perform-cbc-padding-oracle-attack ciphertext iv #(verify-ciphertext-3-17 % key iv))))))
+    (is (= (map int plaintext)
+        (pkcs7-depad
+          (perform-cbc-padding-oracle-attack ciphertext iv #(verify-ciphertext-3-17 % key iv)))))))
 
 (deftest set-3-challenge-18
   (is (= (bytes->str (aes-ctr-mode-encrypt
