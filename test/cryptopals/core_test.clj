@@ -116,10 +116,12 @@
                           (aes-ecb-encrypt $ key))
 
         ; The ciphertexts we'll be generating and snipping together:
-        ;  block           1               2               3
-        ;  01234567890123456789012345678901234567890123456789
-        ;  email=AAAAAAAAAAAAA&uid=10&role=admin
-        ;  email=AAAAAAAAAAAAAAAAAAAAAAAAAAadmin[PADDING]
+        ;
+        ;   ┌0123456789012345┬6789012345678901┬2345678901234567┐
+        ; 1 │email=AAAAAAAAAA│AAA&uid=10&role=|user            │
+        ;   ├────────────────┼────────────────┼────────────────┤
+        ; 2 │email=AAAAAAAAAA│AAAAAAAAAAAAAAAA│admin[pkcs7 pad]│
+        ;   └────────────────┴────────────────┴────────────────┘
 
         ; Ciphertext 1 is used for blocks 1 and 2
         ciphertext-1 (encrypt-fn (apply str (repeat 13 "A")))
